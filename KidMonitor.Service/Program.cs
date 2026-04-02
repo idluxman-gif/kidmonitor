@@ -2,6 +2,7 @@ using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Service;
 using KidMonitor.Service.ContentCapture;
+using KidMonitor.Service.Dashboard;
 using KidMonitor.Service.LanguageDetection;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,7 +17,14 @@ if (args.Contains("--uninstall"))
     return ServiceInstaller.Uninstall();
 }
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+
+// Load overrides from ProgramData (installed config takes precedence over bundled defaults)
+const string programDataConfig = @"C:\ProgramData\KidMonitor\appsettings.json";
+if (File.Exists(programDataConfig))
+{
+    builder.Configuration.AddJsonFile(programDataConfig, optional: true, reloadOnChange: true);
+}
 
 // Run as Windows Service when not in development
 builder.Services.AddWindowsService(options =>
@@ -35,6 +43,7 @@ builder.Services.Configure<MonitoringOptions>(builder.Configuration.GetSection("
 builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection("Notifications"));
 builder.Services.Configure<FoulLanguageOptions>(builder.Configuration.GetSection("FoulLanguage"));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection("Database"));
+builder.Services.Configure<DashboardOptions>(builder.Configuration.GetSection("Dashboard"));
 
 // Database
 var dbPath = builder.Configuration["Database:Path"] ?? @"C:\ProgramData\KidMonitor\kidmonitor.db";
@@ -62,10 +71,27 @@ builder.Services.AddHostedService<DailySummaryWorker>();
 builder.Services.AddHostedService<ContentCaptureWorker>();
 builder.Services.AddHostedService<LanguageDetectionWorker>();
 
-var host = builder.Build();
+// Session (cookie-based PIN auth for dashboard)
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.IdleTimeout = TimeSpan.FromHours(8);
+});
+
+// Configure Kestrel to listen on loopback only
+var dashPort = builder.Configuration.GetValue<int>("Dashboard:Port", 5110);
+builder.WebHost.UseKestrel(options =>
+{
+    options.Listen(System.Net.IPAddress.Loopback, dashPort);
+});
+
+var app = builder.Build();
 
 // Ensure data directory exists with restrictive NTFS ACLs, then auto-apply migrations on startup
-using (var scope = host.Services.CreateScope())
+using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KidMonitorDbContext>();
     var dir = Path.GetDirectoryName(dbPath);
@@ -74,17 +100,14 @@ using (var scope = host.Services.CreateScope())
         Directory.CreateDirectory(dir);
 
         // SEC-01/SEC-02: Lock down the data directory so only the service virtual account
-        // and local Administrators can read/write it. Strip inherited permissive defaults
-        // from C:\ProgramData (which grant Authenticated Users read access).
+        // and local Administrators can read/write it.
         if (OperatingSystem.IsWindows())
         {
             var dirInfo = new DirectoryInfo(dir);
             var security = dirInfo.GetAccessControl();
 
-            // Disable ACL inheritance and remove all inherited entries
             security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
 
-            // Grant full control to the service virtual account (NT SERVICE\KidMonitorService)
             security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
                 @"NT SERVICE\KidMonitorService",
                 System.Security.AccessControl.FileSystemRights.FullControl,
@@ -92,7 +115,6 @@ using (var scope = host.Services.CreateScope())
                 System.Security.AccessControl.PropagationFlags.None,
                 System.Security.AccessControl.AccessControlType.Allow));
 
-            // Grant full control to BUILTIN\Administrators for management/diagnostics
             security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
                 @"BUILTIN\Administrators",
                 System.Security.AccessControl.FileSystemRights.FullControl,
@@ -100,7 +122,6 @@ using (var scope = host.Services.CreateScope())
                 System.Security.AccessControl.PropagationFlags.None,
                 System.Security.AccessControl.AccessControlType.Allow));
 
-            // Explicitly deny read/write to BUILTIN\Users (standard user accounts)
             security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
                 @"BUILTIN\Users",
                 System.Security.AccessControl.FileSystemRights.ReadAndExecute | System.Security.AccessControl.FileSystemRights.Write,
@@ -114,5 +135,13 @@ using (var scope = host.Services.CreateScope())
     db.Database.Migrate();
 }
 
-host.Run();
+// Middleware pipeline
+app.UseStaticFiles();
+app.UseSession();
+app.UseMiddleware<PinAuthMiddleware>();
+
+// Map all dashboard API endpoints
+app.MapDashboardEndpoints();
+
+app.Run();
 return 0;
