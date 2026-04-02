@@ -79,8 +79,21 @@ public class DailySummaryWorker : BackgroundService
             .GroupBy(s => s.ProcessName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Sum(s => s.DurationSeconds));
 
-        var foulCount = await db.NotificationLogs
-            .CountAsync(n => n.Category == "FoulLanguage" && n.SentAt >= startUtc && n.SentAt <= endUtc, ct);
+        var detectionEvents = await db.LanguageDetectionEvents
+            .Where(e => e.DetectedAt >= startUtc && e.DetectedAt <= endUtc)
+            .ToListAsync(ct);
+
+        var foulCount = detectionEvents.Count;
+        var foulByApp = detectionEvents
+            .GroupBy(e => e.AppName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var youtubeSnippets = detectionEvents
+            .Where(e => e.AppName.Contains("youtube", StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.ContextSnippet)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
 
         var reportDir = _config["Database:Path"] is string dbPath
             ? Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "reports")
@@ -88,7 +101,7 @@ public class DailySummaryWorker : BackgroundService
         Directory.CreateDirectory(reportDir);
         var reportPath = Path.Combine(reportDir, $"summary-{date:yyyy-MM-dd}.html");
 
-        var html = BuildHtml(date, totalSeconds, breakdown, foulCount);
+        var html = BuildHtml(date, totalSeconds, breakdown, foulCount, foulByApp, youtubeSnippets);
         await File.WriteAllTextAsync(reportPath, html, Encoding.UTF8, ct);
 
         var summary = new DailySummary
@@ -109,7 +122,9 @@ public class DailySummaryWorker : BackgroundService
 
     private static string BuildHtml(
         DateOnly date, int totalSeconds,
-        Dictionary<string, int> breakdown, int foulCount)
+        Dictionary<string, int> breakdown, int foulCount,
+        Dictionary<string, int>? foulByApp = null,
+        List<string>? youtubeSnippets = null)
     {
         var hours = totalSeconds / 3600;
         var minutes = (totalSeconds % 3600) / 60;
@@ -129,7 +144,31 @@ public class DailySummaryWorker : BackgroundService
             var h = secs / 3600; var m = (secs % 3600) / 60;
             sb.AppendLine($"<tr><td>{app}</td><td>{h}h {m}m</td></tr>");
         }
-        sb.AppendLine("</table></body></html>");
+        sb.AppendLine("</table>");
+
+        if (foulCount > 0)
+        {
+            sb.AppendLine("<h2>Content Monitoring</h2>");
+            sb.AppendLine($"<p class=\"warn\">Total foul language detections: {foulCount}</p>");
+
+            if (foulByApp is { Count: > 0 })
+            {
+                sb.AppendLine("<table><tr><th>App</th><th>Detections</th></tr>");
+                foreach (var (app, count) in foulByApp.OrderByDescending(x => x.Value))
+                    sb.AppendLine($"<tr><td>{app}</td><td>{count}</td></tr>");
+                sb.AppendLine("</table>");
+            }
+
+            if (youtubeSnippets is { Count: > 0 })
+            {
+                sb.AppendLine("<h3>YouTube Context Snippets</h3><ul>");
+                foreach (var snippet in youtubeSnippets)
+                    sb.AppendLine($"<li>{System.Net.WebUtility.HtmlEncode(snippet)}</li>");
+                sb.AppendLine("</ul>");
+            }
+        }
+
+        sb.AppendLine("</body></html>");
         return sb.ToString();
     }
 }

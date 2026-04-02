@@ -52,13 +52,15 @@ public sealed class DailySummaryWorkerTests : IDisposable
 
     private static string InvokeBuildHtml(
         DateOnly date, int totalSeconds,
-        Dictionary<string, int> breakdown, int foulCount)
+        Dictionary<string, int> breakdown, int foulCount,
+        Dictionary<string, int>? foulByApp = null,
+        List<string>? youtubeSnippets = null)
     {
         var method = typeof(DailySummaryWorker)
             .GetMethod("BuildHtml", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("BuildHtml not found via reflection");
 
-        return (string)method.Invoke(null, new object[] { date, totalSeconds, breakdown, foulCount })!;
+        return (string)method.Invoke(null, new object?[] { date, totalSeconds, breakdown, foulCount, foulByApp, youtubeSnippets })!;
     }
 
     [Fact]
@@ -141,6 +143,46 @@ public sealed class DailySummaryWorkerTests : IDisposable
 
         Assert.True(chromeIdx < whatsappIdx, "chrome should appear before WhatsApp in the breakdown table");
         Assert.True(whatsappIdx < notepadIdx, "WhatsApp should appear before notepad in the breakdown table");
+    }
+
+    // ── BuildHtml content monitoring section ────────────────────────────────
+
+    [Fact]
+    public void BuildHtml_ContentMonitoringSection_ShowsPerAppCounts()
+    {
+        var foulByApp = new Dictionary<string, int>
+        {
+            { "YouTube", 3 },
+            { "WhatsApp", 1 }
+        };
+        var html = InvokeBuildHtml(
+            DateOnly.Parse("2026-04-02"), 0, new Dictionary<string, int>(), 4, foulByApp);
+
+        Assert.Contains("Content Monitoring", html);
+        Assert.Contains("YouTube", html);
+        Assert.Contains("WhatsApp", html);
+        Assert.Contains("Total foul language detections: 4", html);
+    }
+
+    [Fact]
+    public void BuildHtml_ContentMonitoringSection_ShowsYoutubeSnippets()
+    {
+        var snippets = new List<string> { "bad word in video title" };
+        var html = InvokeBuildHtml(
+            DateOnly.Parse("2026-04-02"), 0, new Dictionary<string, int>(),
+            1, null, snippets);
+
+        Assert.Contains("YouTube Context Snippets", html);
+        Assert.Contains("bad word in video title", html);
+    }
+
+    [Fact]
+    public void BuildHtml_ContentMonitoringSection_AbsentWhenNoDetections()
+    {
+        var html = InvokeBuildHtml(
+            DateOnly.Parse("2026-04-02"), 0, new Dictionary<string, int>(), 0);
+
+        Assert.DoesNotContain("Content Monitoring", html);
     }
 
     // ── ExecuteAsync lifecycle ──────────────────────────────────────────────

@@ -153,6 +153,49 @@ public sealed class ToastNotificationServiceTests : IDisposable
         Assert.Null(ex);
     }
 
+    // ── NotifyContentAlertAsync ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task NotifyContentAlertAsync_PersistsLog_WithCategoryContentAlert()
+    {
+        var alert = new ContentAlertEvent(
+            AppName: "YouTube",
+            Timestamp: new DateTime(2026, 4, 2, 14, 30, 0, DateTimeKind.Utc),
+            ContextSnippet: "some context",
+            Source: "text");
+
+        await _sut.NotifyContentAlertAsync(alert);
+
+        var log = await _db.NotificationLogs.SingleAsync();
+        Assert.Equal("ContentAlert", log.Category);
+        Assert.Equal("Content Alert", log.Title);
+        Assert.Contains("YouTube", log.Body);
+        Assert.Contains("text", log.Body);
+        Assert.Contains("14:30:00", log.Body);
+        Assert.Null(log.AppSessionId);
+    }
+
+    [Fact]
+    public async Task NotifyContentAlertAsync_TruncatesLongSnippet()
+    {
+        var longSnippet = new string('x', 80);
+        var alert = new ContentAlertEvent("WhatsApp", DateTime.UtcNow, longSnippet, "text");
+
+        await _sut.NotifyContentAlertAsync(alert);
+
+        var log = await _db.NotificationLogs.SingleAsync();
+        Assert.Contains("…", log.Body);
+    }
+
+    [Fact]
+    public async Task NotifyContentAlertAsync_DoesNotThrow()
+    {
+        var alert = new ContentAlertEvent("Discord", DateTime.UtcNow, "snippet", "audio");
+
+        var ex = await Record.ExceptionAsync(() => _sut.NotifyContentAlertAsync(alert));
+        Assert.Null(ex);
+    }
+
     // ── Multiple sends ──────────────────────────────────────────────────────
 
     [Fact]

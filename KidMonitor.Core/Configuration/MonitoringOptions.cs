@@ -9,6 +9,7 @@ public class MonitoringOptions
     public int PollIntervalSeconds { get; set; } = 10;
     public List<TrackedAppConfig> TrackedApps { get; set; } = new();
     public LanguageDetectionOptions LanguageDetection { get; set; } = new();
+    public NotificationOptions Notifications { get; set; } = new();
 }
 
 public class TrackedAppConfig
@@ -24,6 +25,12 @@ public class NotificationOptions
 
     /// <summary>Local time (HH:mm) when the daily summary is generated and sent.</summary>
     public string DailySummaryTimeLocal { get; set; } = "20:00";
+
+    /// <summary>
+    /// Minimum seconds between foul-language alert toasts per detection source
+    /// (app + text/audio). Prevents notification spam on rapid detections.
+    /// </summary>
+    public int FoulLanguageCooldownSeconds { get; set; } = 60;
 }
 
 public class FoulLanguageOptions

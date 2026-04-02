@@ -27,6 +27,10 @@ public class LanguageDetectionWorker : BackgroundService
     private readonly WhisperTranscriptionService _transcriber;
     private readonly ILogger<LanguageDetectionWorker> _logger;
 
+    // Tracks the last time a toast was sent per "{AppName}|{source}" key to enforce cooldown.
+    private readonly Dictionary<string, DateTime> _lastNotifiedAt =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public LanguageDetectionWorker(
         ContentSnapshotChannel channel,
         IFoulLanguageDetector detector,
@@ -109,11 +113,25 @@ public class LanguageDetectionWorker : BackgroundService
         }
         await db.SaveChangesAsync(ct);
 
-        // One notification per snapshot (aggregate multiple matches into first snippet).
-        await _notifications.SendFoulLanguageDetectedAsync(
-            snapshot.AppName,
-            matches[0].ContextSnippet,
-            ct);
+        // Throttle: skip notification if within cooldown window for this app+source.
+        var cooldownSecs = _options.CurrentValue.Notifications.FoulLanguageCooldownSeconds;
+        var throttleKey = $"{snapshot.AppName}|{source}";
+        if (_lastNotifiedAt.TryGetValue(throttleKey, out var lastAt)
+            && DateTime.UtcNow - lastAt < TimeSpan.FromSeconds(cooldownSecs))
+        {
+            _logger.LogDebug(
+                "Notification throttled for {App} [{Source}]: cooldown of {Seconds}s not elapsed.",
+                snapshot.AppName, source, cooldownSecs);
+            return;
+        }
+        _lastNotifiedAt[throttleKey] = DateTime.UtcNow;
+
+        var alert = new ContentAlertEvent(
+            AppName: snapshot.AppName,
+            Timestamp: DateTime.UtcNow,
+            ContextSnippet: matches[0].ContextSnippet,
+            Source: source);
+        await _notifications.NotifyContentAlertAsync(alert, ct);
     }
 
     // ── Audio monitoring ───────────────────────────────────────────────────────

@@ -46,6 +46,16 @@ public class ToastNotificationService : INotificationService
         await SendAndLogAsync("DailySummary", title, body, null, ct);
     }
 
+    public async Task NotifyContentAlertAsync(ContentAlertEvent e, CancellationToken ct = default)
+    {
+        var snippet = e.ContextSnippet.Length > 60
+            ? e.ContextSnippet[..60] + "…"
+            : e.ContextSnippet;
+        var title = "Content Alert";
+        var body = $"[{e.AppName}] [{e.Source}] {e.Timestamp:HH:mm:ss} — {snippet}";
+        await SendAndLogAsync("ContentAlert", title, body, null, ct);
+    }
+
     private async Task SendAndLogAsync(
         string category, string title, string body,
         int? appSessionId, CancellationToken ct)
