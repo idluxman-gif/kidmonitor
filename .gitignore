@@ -1,0 +1,18 @@
+## .NET
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+*.db
+*.db-shm
+*.db-wal
+
+## Logs
+logs/
+*.log
+
+## OS
+.DS_Store
+Thumbs.db

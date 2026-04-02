@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore KidMonitor.sln
+
+      - name: Build (Debug)
+        run: dotnet build KidMonitor.sln --no-restore --configuration Debug
+
+      - name: Build (Release)
+        run: dotnet build KidMonitor.sln --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test KidMonitor.sln --no-build --configuration Debug --verbosity normal
+        # No test projects yet — this will be a no-op until WHA-test is created
+
+      - name: Publish (self-contained win-x64)
+        run: |
+          dotnet publish KidMonitor.Service/KidMonitor.Service.csproj \
+            --configuration Release \
+            --runtime win-x64 \
+            --self-contained true \
+            --output publish/
