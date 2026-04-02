@@ -10,6 +10,8 @@ public class KidMonitorDbContext : DbContext
     public DbSet<AppSession> AppSessions => Set<AppSession>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
+    public DbSet<ContentSession> ContentSessions => Set<ContentSession>();
+    public DbSet<ContentSnapshot> ContentSnapshots => Set<ContentSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +33,24 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<DailySummary>(e =>
         {
             e.HasIndex(d => d.ReportDate).IsUnique();
+        });
+
+        modelBuilder.Entity<ContentSession>(e =>
+        {
+            e.HasIndex(s => s.StartedAt);
+            e.HasOne(s => s.AppSession)
+             .WithMany()
+             .HasForeignKey(s => s.AppSessionId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ContentSnapshot>(e =>
+        {
+            e.HasIndex(s => s.CapturedAt);
+            e.HasOne(s => s.ContentSession)
+             .WithMany(cs => cs.Snapshots)
+             .HasForeignKey(s => s.ContentSessionId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

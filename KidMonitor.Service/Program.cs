@@ -1,6 +1,7 @@
 using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Service;
+using KidMonitor.Service.ContentCapture;
 using Microsoft.EntityFrameworkCore;
 
 // Handle --install / --uninstall CLI args before building host
@@ -43,10 +44,16 @@ builder.Services.AddDbContext<KidMonitorDbContext>(options =>
 // Services
 builder.Services.AddSingleton<INotificationService, ToastNotificationService>();
 
+// Content capture adapters (registered as IContentCaptureAdapter, resolved as IEnumerable)
+builder.Services.AddSingleton<IContentCaptureAdapter, YouTubeContentAdapter>();
+builder.Services.AddSingleton<IContentCaptureAdapter, WhatsAppContentAdapter>();
+builder.Services.AddSingleton<IContentCaptureAdapter, GameChatContentAdapter>();
+
 // Background workers
 builder.Services.AddHostedService<MonitorWorker>();
 builder.Services.AddHostedService<ProcessTrackingWorker>();
 builder.Services.AddHostedService<DailySummaryWorker>();
+builder.Services.AddHostedService<ContentCaptureWorker>();
 
 var host = builder.Build();
 
