@@ -3,4 +3,14 @@
     <OutputName>KidMonitorSetup</OutputName>
     <OutputType>Package</OutputType>
   </PropertyGroup>
+
+  <!-- Reference the service and tray publish outputs -->
+  <ItemGroup>
+    <ProjectReference Include="..\KidMonitor.Service\KidMonitor.Service.csproj">
+      <DoNotHarvest>true</DoNotHarvest>
+    </ProjectReference>
+    <ProjectReference Include="..\KidMonitor.Tray\KidMonitor.Tray.csproj">
+      <DoNotHarvest>true</DoNotHarvest>
+    </ProjectReference>
+  </ItemGroup>
 </Project>
