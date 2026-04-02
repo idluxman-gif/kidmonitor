@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="KidMonitor"
+    Manufacturer="KidMonitor"
+    Version="1.0.0.0"
+    UpgradeCode="A7E3F2B1-C9D0-4E5A-8B6F-1D2E3F4A5B6C"
+    Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="ProductFeature" Title="KidMonitor Service" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="KidMonitor" />
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DATFOLDER" Name="KidMonitor" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <!-- Main service executable and all publish output -->
+      <Component Id="ServiceExe" Guid="B1C2D3E4-F5A6-7890-ABCD-EF1234567891">
+        <File Id="KidMonitorServiceExe"
+              Source="$(var.KidMonitor.Service.PublishDir)KidMonitor.Service.exe"
+              KeyPath="yes" />
+
+        <!-- Install as auto-start Windows Service -->
+        <ServiceInstall
+          Id="ServiceInstall"
+          Name="KidMonitorService"
+          DisplayName="KidMonitor Parental Service"
+          Description="Monitors child PC usage and sends real-time parental alerts."
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Account="LocalSystem" />
+
+        <!-- Start on install, stop on uninstall -->
+        <ServiceControl
+          Id="ServiceControl"
+          Name="KidMonitorService"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+
+      <!-- Default config file (only installed if missing) -->
+      <Component Id="AppSettings" Guid="C2D3E4F5-A6B7-8901-BCDE-F12345678902">
+        <File Id="AppSettingsJson"
+              Source="..\KidMonitor.Service\appsettings.json"
+              KeyPath="yes"
+              NeverOverwrite="yes" />
+      </Component>
+
+      <!-- Data directory (for SQLite database) -->
+      <Component Id="DataDir" Guid="D3E4F5A6-B7C8-9012-CDEF-123456789012" Directory="DATFOLDER">
+        <CreateFolder />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+</Wix>
