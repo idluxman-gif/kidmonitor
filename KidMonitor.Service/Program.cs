@@ -64,13 +64,53 @@ builder.Services.AddHostedService<LanguageDetectionWorker>();
 
 var host = builder.Build();
 
-// Ensure data directory exists and auto-apply migrations on startup
+// Ensure data directory exists with restrictive NTFS ACLs, then auto-apply migrations on startup
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KidMonitorDbContext>();
     var dir = Path.GetDirectoryName(dbPath);
     if (!string.IsNullOrEmpty(dir))
+    {
         Directory.CreateDirectory(dir);
+
+        // SEC-01/SEC-02: Lock down the data directory so only the service virtual account
+        // and local Administrators can read/write it. Strip inherited permissive defaults
+        // from C:\ProgramData (which grant Authenticated Users read access).
+        if (OperatingSystem.IsWindows())
+        {
+            var dirInfo = new DirectoryInfo(dir);
+            var security = dirInfo.GetAccessControl();
+
+            // Disable ACL inheritance and remove all inherited entries
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+            // Grant full control to the service virtual account (NT SERVICE\KidMonitorService)
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"NT SERVICE\KidMonitorService",
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+
+            // Grant full control to BUILTIN\Administrators for management/diagnostics
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"BUILTIN\Administrators",
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+
+            // Explicitly deny read/write to BUILTIN\Users (standard user accounts)
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"BUILTIN\Users",
+                System.Security.AccessControl.FileSystemRights.ReadAndExecute | System.Security.AccessControl.FileSystemRights.Write,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Deny));
+
+            dirInfo.SetAccessControl(security);
+        }
+    }
     db.Database.Migrate();
 }
 

@@ -14,8 +14,10 @@ public static class ServiceInstaller
 
     public static int Install(string exePath)
     {
-        // sc create KidMonitorService binPath= "..." start= auto
-        Run("sc", $"create \"{ServiceName}\" binPath= \"{exePath}\" start= auto DisplayName= \"{ServiceDisplayName}\"");
+        // SEC-03: Use NT SERVICE virtual account (least privilege) instead of default LocalSystem.
+        // The virtual account is auto-created by Windows SCM and has no password to manage.
+        // Grant it only the permissions it needs (data directory RW, see Program.cs ACL setup).
+        Run("sc", $"create \"{ServiceName}\" binPath= \"{exePath}\" start= auto DisplayName= \"{ServiceDisplayName}\" obj= \"NT SERVICE\\{ServiceName}\"");
         Run("sc", $"description \"{ServiceName}\" \"{ServiceDescription}\"");
         // Configure recovery: restart on failure, 3 times, 60s delay
         Run("sc", $"failure \"{ServiceName}\" reset= 86400 actions= restart/60000/restart/60000/restart/60000");
