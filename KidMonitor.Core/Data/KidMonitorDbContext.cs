@@ -12,6 +12,7 @@ public class KidMonitorDbContext : DbContext
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
     public DbSet<ContentSession> ContentSessions => Set<ContentSession>();
     public DbSet<ContentSnapshot> ContentSnapshots => Set<ContentSnapshot>();
+    public DbSet<LanguageDetectionEvent> LanguageDetectionEvents => Set<LanguageDetectionEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +51,15 @@ public class KidMonitorDbContext : DbContext
             e.HasOne(s => s.ContentSession)
              .WithMany(cs => cs.Snapshots)
              .HasForeignKey(s => s.ContentSessionId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<LanguageDetectionEvent>(e =>
+        {
+            e.HasIndex(lde => lde.DetectedAt);
+            e.HasOne(lde => lde.ContentSession)
+             .WithMany()
+             .HasForeignKey(lde => lde.ContentSessionId)
              .OnDelete(DeleteBehavior.SetNull);
         });
     }

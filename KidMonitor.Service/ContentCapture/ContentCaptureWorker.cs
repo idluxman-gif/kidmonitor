@@ -1,5 +1,6 @@
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
+using KidMonitor.Service.LanguageDetection;
 
 namespace KidMonitor.Service.ContentCapture;
 
@@ -17,6 +18,7 @@ public class ContentCaptureWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEnumerable<IContentCaptureAdapter> _adapters;
+    private readonly ContentSnapshotChannel _snapshotChannel;
     private readonly IConfiguration _config;
     private readonly ILogger<ContentCaptureWorker> _logger;
 
@@ -27,11 +29,13 @@ public class ContentCaptureWorker : BackgroundService
     public ContentCaptureWorker(
         IServiceScopeFactory scopeFactory,
         IEnumerable<IContentCaptureAdapter> adapters,
+        ContentSnapshotChannel snapshotChannel,
         IConfiguration config,
         ILogger<ContentCaptureWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _adapters = adapters;
+        _snapshotChannel = snapshotChannel;
         _config = config;
         _logger = logger;
     }
@@ -100,6 +104,7 @@ public class ContentCaptureWorker : BackgroundService
                         db.ContentSnapshots.Add(snapshot);
                         await db.SaveChangesAsync(ct);
                         _openSessions[sessionKey] = (open.SessionId, snapshot.CapturedText);
+                        _snapshotChannel.Writer.TryWrite(snapshot);
 
                         _logger.LogDebug("Content changed [{App}]: {Text}", snapshot.AppName, snapshot.CapturedText);
                     }
@@ -123,6 +128,7 @@ public class ContentCaptureWorker : BackgroundService
                     await db.SaveChangesAsync(ct);
 
                     _openSessions[sessionKey] = (session.Id, snapshot.CapturedText);
+                    _snapshotChannel.Writer.TryWrite(snapshot);
                     _logger.LogInformation("Content session opened [{App}]: {Text}", snapshot.AppName, snapshot.CapturedText);
                 }
 

@@ -170,6 +170,46 @@ partial class KidMonitorDbContextModelSnapshot : ModelSnapshot
             b.ToTable("DailySummaries");
         });
 
+        modelBuilder.Entity("KidMonitor.Core.Models.LanguageDetectionEvent", b =>
+        {
+            b.Property<int>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("INTEGER");
+
+            b.Property<string>("AppName")
+                .IsRequired()
+                .HasColumnType("TEXT");
+
+            b.Property<int?>("ContentSessionId")
+                .HasColumnType("INTEGER");
+
+            b.Property<string>("ContextSnippet")
+                .IsRequired()
+                .HasColumnType("TEXT");
+
+            b.Property<DateTime>("CreatedAt")
+                .HasColumnType("TEXT");
+
+            b.Property<DateTime>("DetectedAt")
+                .HasColumnType("TEXT");
+
+            b.Property<string>("MatchedTerm")
+                .IsRequired()
+                .HasColumnType("TEXT");
+
+            b.Property<string>("Source")
+                .IsRequired()
+                .HasColumnType("TEXT");
+
+            b.HasKey("Id");
+
+            b.HasIndex("ContentSessionId");
+
+            b.HasIndex("DetectedAt");
+
+            b.ToTable("LanguageDetectionEvents");
+        });
+
         modelBuilder.Entity("KidMonitor.Core.Models.NotificationLog", b =>
         {
             b.Property<int>("Id")
@@ -239,6 +279,16 @@ partial class KidMonitorDbContextModelSnapshot : ModelSnapshot
         modelBuilder.Entity("KidMonitor.Core.Models.ContentSession", b =>
         {
             b.Navigation("Snapshots");
+        });
+
+        modelBuilder.Entity("KidMonitor.Core.Models.LanguageDetectionEvent", b =>
+        {
+            b.HasOne("KidMonitor.Core.Models.ContentSession", "ContentSession")
+                .WithMany()
+                .HasForeignKey("ContentSessionId")
+                .OnDelete(DeleteBehavior.SetNull);
+
+            b.Navigation("ContentSession");
         });
 #pragma warning restore 612, 618
     }

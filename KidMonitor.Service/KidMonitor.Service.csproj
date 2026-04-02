@@ -22,6 +22,11 @@
     </PackageReference>
     <!-- Toast notifications via Windows Community Toolkit -->
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <!-- Audio capture (WASAPI loopback) -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Local speech-to-text via whisper.cpp -->
+    <PackageReference Include="Whisper.net" Version="1.7.2" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.7.2" />
   </ItemGroup>
 
   <ItemGroup>

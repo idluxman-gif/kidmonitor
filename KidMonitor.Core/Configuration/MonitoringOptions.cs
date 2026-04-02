@@ -8,6 +8,7 @@ public class MonitoringOptions
 {
     public int PollIntervalSeconds { get; set; } = 10;
     public List<TrackedAppConfig> TrackedApps { get; set; } = new();
+    public LanguageDetectionOptions LanguageDetection { get; set; } = new();
 }
 
 public class TrackedAppConfig
@@ -31,6 +32,29 @@ public class FoulLanguageOptions
 
     /// <summary>Path to the plain-text foul word list (one word per line).</summary>
     public string WordListPath { get; set; } = @"C:\ProgramData\KidMonitor\wordlist.txt";
+}
+
+public class LanguageDetectionOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Inline word list for detection (entries are lowercased plain words).
+    /// Falls back to FoulLanguage:WordListPath when this list is empty.
+    /// </summary>
+    public List<string> WordList { get; set; } = new();
+
+    /// <summary>Enable audio transcription for active YouTube sessions.</summary>
+    public bool AudioEnabled { get; set; } = false;
+
+    /// <summary>Path to the GGML Whisper model file (e.g. ggml-base.bin).</summary>
+    public string ModelPath { get; set; } = @"C:\ProgramData\KidMonitor\ggml-base.bin";
+
+    /// <summary>Audio device selection: "cpu" or "cuda".</summary>
+    public string GpuMode { get; set; } = "cpu";
+
+    /// <summary>Rolling audio window length fed to Whisper, in seconds.</summary>
+    public int AudioWindowSeconds { get; set; } = 8;
 }
 
 public class DatabaseOptions

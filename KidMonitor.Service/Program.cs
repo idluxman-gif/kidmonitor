@@ -2,6 +2,7 @@ using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Service;
 using KidMonitor.Service.ContentCapture;
+using KidMonitor.Service.LanguageDetection;
 using Microsoft.EntityFrameworkCore;
 
 // Handle --install / --uninstall CLI args before building host
@@ -49,11 +50,17 @@ builder.Services.AddSingleton<IContentCaptureAdapter, YouTubeContentAdapter>();
 builder.Services.AddSingleton<IContentCaptureAdapter, WhatsAppContentAdapter>();
 builder.Services.AddSingleton<IContentCaptureAdapter, GameChatContentAdapter>();
 
+// Language detection pipeline
+builder.Services.AddSingleton<ContentSnapshotChannel>();
+builder.Services.AddSingleton<IFoulLanguageDetector, ConfigurableFoulLanguageDetector>();
+builder.Services.AddSingleton<WhisperTranscriptionService>();
+
 // Background workers
 builder.Services.AddHostedService<MonitorWorker>();
 builder.Services.AddHostedService<ProcessTrackingWorker>();
 builder.Services.AddHostedService<DailySummaryWorker>();
 builder.Services.AddHostedService<ContentCaptureWorker>();
+builder.Services.AddHostedService<LanguageDetectionWorker>();
 
 var host = builder.Build();
 
