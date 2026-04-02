@@ -1,8 +1,9 @@
+using KidMonitor.Core.Configuration;
 using KidMonitor.Service;
 using KidMonitor.Tests.TestHelpers;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KidMonitor.Tests.Service;
@@ -32,15 +33,10 @@ public sealed class ProcessTrackingWorkerTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private static IConfiguration BuildConfig(int pollSeconds = 1) =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Monitoring:PollIntervalSeconds"] = pollSeconds.ToString()
-            })
-            .Build();
+    private static IOptions<MonitoringOptions> BuildOptions(int pollSeconds = 1) =>
+        Options.Create(new MonitoringOptions { PollIntervalSeconds = pollSeconds });
 
-    private static ProcessTrackingWorker BuildWorker(IConfiguration? config = null)
+    private static ProcessTrackingWorker BuildWorker(IOptions<MonitoringOptions>? options = null)
     {
         InMemoryDbHelper.CreateDb(out _);
         var db = InMemoryDbHelper.CreateDb(out _);
@@ -48,7 +44,7 @@ public sealed class ProcessTrackingWorkerTests : IDisposable
         var notifications = new Mock<INotificationService>().Object;
         return new ProcessTrackingWorker(
             scopeFactory,
-            config ?? BuildConfig(),
+            options ?? BuildOptions(),
             NullLogger<ProcessTrackingWorker>.Instance,
             notifications);
     }
@@ -67,7 +63,7 @@ public sealed class ProcessTrackingWorkerTests : IDisposable
     public async Task ExecuteAsync_CancelsCleanly_WhenTokenPreCancelled()
     {
         // Arrange
-        var worker = BuildWorker(BuildConfig(pollSeconds: 1));
+        var worker = BuildWorker(BuildOptions(pollSeconds: 1));
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
@@ -81,7 +77,7 @@ public sealed class ProcessTrackingWorkerTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_ShutdownGracefully_ViaStopAsync()
     {
-        var worker = BuildWorker(BuildConfig(pollSeconds: 60));
+        var worker = BuildWorker(BuildOptions(pollSeconds: 60));
 
         await worker.StartAsync(CancellationToken.None);
         // Let it run one poll cycle at most
@@ -92,15 +88,14 @@ public sealed class ProcessTrackingWorkerTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies the default tracked-app list is populated when no config section exists.
-    /// This exercises the fallback in <c>GetTrackedApps()</c>.
+    /// Verifies the default tracked-app list is populated when no TrackedApps are configured.
     /// </summary>
     [Fact]
     public void DefaultTrackedApps_AppliedWhenNoConfigSection()
     {
-        // An empty config means Monitoring:TrackedApps is absent → fallback list used
-        var emptyConfig = new ConfigurationBuilder().Build();
-        var ex = Record.Exception(() => BuildWorker(emptyConfig));
+        // Empty TrackedApps list → fallback list used inside ExecuteAsync
+        var emptyOptions = Options.Create(new MonitoringOptions());
+        var ex = Record.Exception(() => BuildWorker(emptyOptions));
         Assert.Null(ex); // No crash constructing the worker
     }
 }

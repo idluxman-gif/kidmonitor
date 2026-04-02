@@ -44,5 +44,15 @@ public static class ServiceInstaller
             RedirectStandardError = true
         })!;
         process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+            Console.Error.WriteLine($"sc.exe exited with code {process.ExitCode}.");
+            if (!string.IsNullOrWhiteSpace(stdout)) Console.Error.WriteLine(stdout);
+            if (!string.IsNullOrWhiteSpace(stderr)) Console.Error.WriteLine(stderr);
+            throw new InvalidOperationException(
+                $"sc.exe failed (exit code {process.ExitCode}): {stdout} {stderr}".Trim());
+        }
     }
 }

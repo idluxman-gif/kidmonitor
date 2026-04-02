@@ -1,12 +1,13 @@
 using System.Reflection;
+using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
 using KidMonitor.Service;
 using KidMonitor.Tests.TestHelpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace KidMonitor.Tests.Service;
@@ -27,23 +28,22 @@ public sealed class DailySummaryWorkerTests : IDisposable
         _connection.Dispose();
     }
 
-    private static IConfiguration BuildConfig(string summaryTime = "20:00") =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Notifications:DailySummaryTimeLocal"] = summaryTime
-            })
-            .Build();
+    private static IOptions<NotificationOptions> BuildNotificationOptions(string summaryTime = "20:00") =>
+        Options.Create(new NotificationOptions { DailySummaryTimeLocal = summaryTime });
+
+    private static IOptions<DatabaseOptions> BuildDatabaseOptions() =>
+        Options.Create(new DatabaseOptions { Path = @"C:\ProgramData\KidMonitor\kidmonitor.db" });
 
     private DailySummaryWorker BuildWorker(
-        IConfiguration? config = null,
+        IOptions<NotificationOptions>? notificationOptions = null,
         Mock<INotificationService>? notificationMock = null)
     {
         var scopeFactory = InMemoryDbHelper.CreateScopeFactory(_db);
         var notifications = (notificationMock ?? new Mock<INotificationService>()).Object;
         return new DailySummaryWorker(
             scopeFactory,
-            config ?? BuildConfig(),
+            notificationOptions ?? BuildNotificationOptions(),
+            BuildDatabaseOptions(),
             NullLogger<DailySummaryWorker>.Instance,
             notifications);
     }
@@ -214,7 +214,7 @@ public sealed class DailySummaryWorkerTests : IDisposable
 
         var notificationMock = new Mock<INotificationService>();
         // Set summary time to "00:00" so the worker enters the "already past" branch on any real clock
-        var worker = BuildWorker(BuildConfig(summaryTime: "00:00"), notificationMock);
+        var worker = BuildWorker(BuildNotificationOptions(summaryTime: "00:00"), notificationMock);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
         await worker.StartAsync(CancellationToken.None);

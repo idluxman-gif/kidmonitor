@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace KidMonitor.Service;
 
@@ -12,7 +14,7 @@ namespace KidMonitor.Service;
 public class ProcessTrackingWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConfiguration _config;
+    private readonly IOptions<MonitoringOptions> _options;
     private readonly ILogger<ProcessTrackingWorker> _logger;
     private readonly INotificationService _notifications;
 
@@ -21,20 +23,28 @@ public class ProcessTrackingWorker : BackgroundService
 
     public ProcessTrackingWorker(
         IServiceScopeFactory scopeFactory,
-        IConfiguration config,
+        IOptions<MonitoringOptions> options,
         ILogger<ProcessTrackingWorker> logger,
         INotificationService notifications)
     {
         _scopeFactory = scopeFactory;
-        _config = config;
+        _options = options;
         _logger = logger;
         _notifications = notifications;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var pollSeconds = _config.GetValue<int>("Monitoring:PollIntervalSeconds", 10);
-        var trackedApps = GetTrackedApps();
+        var pollSeconds = _options.Value.PollIntervalSeconds;
+        var trackedApps = _options.Value.TrackedApps.Count > 0
+            ? _options.Value.TrackedApps
+            : new List<TrackedAppConfig>
+            {
+                new() { ProcessName = "chrome", DisplayName = "Google Chrome" },
+                new() { ProcessName = "msedge", DisplayName = "Microsoft Edge" },
+                new() { ProcessName = "firefox", DisplayName = "Firefox" },
+                new() { ProcessName = "WhatsApp", DisplayName = "WhatsApp Desktop" },
+            };
 
         _logger.LogInformation("ProcessTrackingWorker started. Tracking {Count} apps, polling every {Poll}s.",
             trackedApps.Count, pollSeconds);
@@ -57,7 +67,7 @@ public class ProcessTrackingWorker : BackgroundService
         await CloseAllOpenSessionsAsync(stoppingToken);
     }
 
-    private async Task PollAsync(List<TrackedApp> trackedApps, CancellationToken ct)
+    private async Task PollAsync(List<TrackedAppConfig> trackedApps, CancellationToken ct)
     {
         var runningNames = Process.GetProcesses()
             .Select(p => p.ProcessName)
@@ -123,21 +133,4 @@ public class ProcessTrackingWorker : BackgroundService
         _openSessions.Clear();
     }
 
-    private List<TrackedApp> GetTrackedApps()
-    {
-        var section = _config.GetSection("Monitoring:TrackedApps");
-        return section.Get<List<TrackedApp>>() ?? new List<TrackedApp>
-        {
-            new() { ProcessName = "chrome", DisplayName = "Google Chrome" },
-            new() { ProcessName = "msedge", DisplayName = "Microsoft Edge" },
-            new() { ProcessName = "firefox", DisplayName = "Firefox" },
-            new() { ProcessName = "WhatsApp", DisplayName = "WhatsApp Desktop" },
-        };
-    }
-
-    private record TrackedApp
-    {
-        public string ProcessName { get; init; } = string.Empty;
-        public string DisplayName { get; init; } = string.Empty;
-    }
 }

@@ -18,10 +18,21 @@ public class MonitorWorker : BackgroundService
     {
         _logger.LogInformation("KidMonitor service started at {Time}", DateTimeOffset.Now);
 
+        var heartbeatCount = 0;
+        var lastLogTime = DateTime.UtcNow;
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            // Polling loop — sub-workers will be injected here
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+
+            heartbeatCount++;
+            if ((DateTime.UtcNow - lastLogTime).TotalSeconds >= 60)
+            {
+                _logger.LogInformation(
+                    "KidMonitor watchdog heartbeat #{Count} at {Time} UTC",
+                    heartbeatCount, DateTime.UtcNow);
+                lastLogTime = DateTime.UtcNow;
+            }
         }
 
         _logger.LogInformation("KidMonitor service stopping at {Time}", DateTimeOffset.Now);

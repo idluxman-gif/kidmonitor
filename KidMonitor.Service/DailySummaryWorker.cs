@@ -1,8 +1,10 @@
 using System.Text;
 using System.Text.Json;
+using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace KidMonitor.Service;
 
@@ -13,26 +15,28 @@ namespace KidMonitor.Service;
 public class DailySummaryWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConfiguration _config;
+    private readonly IOptions<NotificationOptions> _notificationOptions;
+    private readonly IOptions<DatabaseOptions> _databaseOptions;
     private readonly ILogger<DailySummaryWorker> _logger;
     private readonly INotificationService _notifications;
 
     public DailySummaryWorker(
         IServiceScopeFactory scopeFactory,
-        IConfiguration config,
+        IOptions<NotificationOptions> notificationOptions,
+        IOptions<DatabaseOptions> databaseOptions,
         ILogger<DailySummaryWorker> logger,
         INotificationService notifications)
     {
         _scopeFactory = scopeFactory;
-        _config = config;
+        _notificationOptions = notificationOptions;
+        _databaseOptions = databaseOptions;
         _logger = logger;
         _notifications = notifications;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var summaryTimeStr = _config["Notifications:DailySummaryTimeLocal"] ?? "20:00";
-        var summaryTime = TimeOnly.Parse(summaryTimeStr);
+        var summaryTime = TimeOnly.Parse(_notificationOptions.Value.DailySummaryTimeLocal);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -58,8 +62,11 @@ public class DailySummaryWorker : BackgroundService
                     var summary = await GenerateSummaryAsync(db, today, stoppingToken);
                     await _notifications.SendDailySummaryAsync(summary, stoppingToken);
                 }
-                // Wait until same time tomorrow
-                await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+                // Wait until the scheduled time tomorrow (exact duration, avoids drift on restart)
+                var tomorrow = today.AddDays(1);
+                var delay = tomorrow.ToDateTime(summaryTime) - DateTime.Now;
+                _logger.LogInformation("Next daily summary in {Minutes:N0} minutes.", delay.TotalMinutes);
+                await Task.Delay(delay, stoppingToken);
             }
         }
     }
@@ -74,10 +81,13 @@ public class DailySummaryWorker : BackgroundService
             .Where(s => s.StartedAt >= startUtc && s.StartedAt <= endUtc)
             .ToListAsync(ct);
 
-        var totalSeconds = sessions.Sum(s => s.DurationSeconds);
+        var now = DateTime.UtcNow;
+        var totalSeconds = sessions.Sum(s =>
+            s.EndedAt == null ? (int)(now - s.StartedAt).TotalSeconds : s.DurationSeconds);
         var breakdown = sessions
             .GroupBy(s => s.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Sum(s => s.DurationSeconds));
+            .ToDictionary(g => g.Key, g => g.Sum(s =>
+                s.EndedAt == null ? (int)(now - s.StartedAt).TotalSeconds : s.DurationSeconds));
 
         var detectionEvents = await db.LanguageDetectionEvents
             .Where(e => e.DetectedAt >= startUtc && e.DetectedAt <= endUtc)
@@ -95,9 +105,8 @@ public class DailySummaryWorker : BackgroundService
             .Take(10)
             .ToList();
 
-        var reportDir = _config["Database:Path"] is string dbPath
-            ? Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "reports")
-            : "reports";
+        var reportDir = Path.Combine(
+            Path.GetDirectoryName(_databaseOptions.Value.Path) ?? ".", "reports");
         Directory.CreateDirectory(reportDir);
         var reportPath = Path.Combine(reportDir, $"summary-{date:yyyy-MM-dd}.html");
 
