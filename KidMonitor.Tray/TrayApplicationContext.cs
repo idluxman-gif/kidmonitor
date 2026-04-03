@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KidMonitor.Tray;
 
@@ -11,20 +12,24 @@ namespace KidMonitor.Tray;
 public sealed class TrayApplicationContext : ApplicationContext
 {
     private const string DashboardUrl = "http://localhost:5110";
-    private const string HealthUrl = "http://localhost:5110/api/health";
 
     private readonly NotifyIcon _trayIcon;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _openItem;
     private readonly System.Windows.Forms.Timer _healthTimer;
     private readonly HttpClient _http;
+    private readonly HealthPoller _healthPoller;
 
     public TrayApplicationContext()
     {
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        _http = new HttpClient
+        {
+            BaseAddress = new Uri(DashboardUrl),
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+        _healthPoller = new HealthPoller(_http, NullLogger<HealthPoller>.Instance);
 
-        // Build context menu
-        _statusItem = new ToolStripMenuItem("Service: Checking…") { Enabled = false };
+        _statusItem = new ToolStripMenuItem("Service: Checking...") { Enabled = false };
         _openItem = new ToolStripMenuItem("Open Dashboard", null, OnOpenDashboard);
         var separator = new ToolStripSeparator();
         var exitItem = new ToolStripMenuItem("Exit", null, OnExit);
@@ -35,7 +40,6 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(separator);
         menu.Items.Add(exitItem);
 
-        // Tray icon — use embedded resource, fall back to SystemIcons if missing
         var icon = LoadEmbeddedIcon() ?? SystemIcons.Shield;
 
         _trayIcon = new NotifyIcon
@@ -46,24 +50,21 @@ public sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
         };
 
-        // Double-click opens dashboard
         _trayIcon.DoubleClick += OnOpenDashboard;
 
-        // Health poll timer (every 30 seconds)
         _healthTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
-        _healthTimer.Tick += async (_, _) => await CheckHealthAsync();
+        _healthTimer.Tick += async (_, _) => await RefreshHealthAsync();
         _healthTimer.Start();
 
-        // Initial health check
-        _ = CheckHealthAsync();
+        _ = RefreshHealthAsync();
     }
 
     private static Icon? LoadEmbeddedIcon()
     {
         try
         {
-            var asm = Assembly.GetExecutingAssembly();
-            using var stream = asm.GetManifestResourceStream("KidMonitor.Tray.Resources.kidmonitor.ico");
+            var assembly = Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("KidMonitor.Tray.Resources.kidmonitor.ico");
             return stream is not null ? new Icon(stream) : null;
         }
         catch
@@ -72,20 +73,10 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private async Task CheckHealthAsync()
+    private async Task RefreshHealthAsync()
     {
-        bool reachable;
-        try
-        {
-            var response = await _http.GetAsync(HealthUrl);
-            reachable = response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            reachable = false;
-        }
+        var reachable = await _healthPoller.CheckAsync(CancellationToken.None);
 
-        // Marshal back to UI thread
         if (_trayIcon.ContextMenuStrip?.InvokeRequired == true)
         {
             _trayIcon.ContextMenuStrip.Invoke(() => UpdateStatus(reachable));
@@ -98,9 +89,9 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateStatus(bool reachable)
     {
-        _statusItem.Text = reachable ? "Service: Running ✓" : "Service: Unreachable ✗";
+        _statusItem.Text = reachable ? "Service: Running" : "Service: Unreachable";
         _openItem.Enabled = reachable;
-        _trayIcon.Text = reachable ? "KidMonitor — Running" : "KidMonitor — Unreachable";
+        _trayIcon.Text = reachable ? "KidMonitor - Running" : "KidMonitor - Unreachable";
     }
 
     private void OnOpenDashboard(object? sender, EventArgs e)
@@ -130,6 +121,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             _trayIcon.Dispose();
             _http.Dispose();
         }
+
         base.Dispose(disposing);
     }
 }

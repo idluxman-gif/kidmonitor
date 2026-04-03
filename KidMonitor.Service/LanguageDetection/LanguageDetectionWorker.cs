@@ -65,16 +65,22 @@ public class LanguageDetectionWorker : BackgroundService
                 .Unwrap();
         }
 
-        await foreach (var snapshot in _channel.Reader.ReadAllAsync(stoppingToken))
+        try
         {
-            try
+            await foreach (var snapshot in _channel.Reader.ReadAllAsync(stoppingToken))
             {
-                await ProcessSnapshotAsync(snapshot, "text", stoppingToken);
+                try
+                {
+                    await ProcessSnapshotAsync(snapshot, "text", stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Error processing snapshot from {App}.", snapshot.AppName);
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "Error processing snapshot from {App}.", snapshot.AppName);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
         }
 
         if (audioTask is not null)

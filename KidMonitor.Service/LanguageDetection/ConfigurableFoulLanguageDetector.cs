@@ -77,8 +77,8 @@ public class ConfigurableFoulLanguageDetector : IFoulLanguageDetector
 
                 // Word-boundary guard: don't flag substrings inside longer innocent words
                 // (simple ASCII check — good enough for a word-list approach).
-                var before = pos > 0 ? normalised[pos - 1] : ' ';
-                var after = pos + word.Length < normalised.Length ? normalised[pos + word.Length] : ' ';
+                var before = pos > 0 ? text[pos - 1] : ' ';
+                var after = pos + word.Length < text.Length ? text[pos + word.Length] : ' ';
 
                 if (!char.IsLetterOrDigit(before) && !char.IsLetterOrDigit(after))
                 {

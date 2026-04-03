@@ -36,7 +36,7 @@ public static class DashboardEndpoints
 
     // POST /api/auth/login
     // Body: { "pin": "1234" }
-    private static async Task<IResult> LoginAsync(
+    private static IResult LoginAsync(
         HttpContext context,
         LoginRequest body,
         IOptionsSnapshot<DashboardOptions> options)
@@ -58,9 +58,7 @@ public static class DashboardEndpoints
 
     // GET /api/dashboard
     // Returns today's screen time summary + recent language detection events.
-    private static async Task<IResult> GetDashboardAsync(
-        KidMonitorDbContext db,
-        IOptionsSnapshot<MonitoringOptions> options)
+    private static async Task<IResult> GetDashboardAsync(KidMonitorDbContext db)
     {
         var todayStart = DateTime.UtcNow.Date;
         var todayEnd = todayStart.AddDays(1);
@@ -104,6 +102,7 @@ public static class DashboardEndpoints
         {
             Date = todayStart.ToString("yyyy-MM-dd"),
             TotalScreenTimeSeconds = totalSeconds,
+            AppBreakdown = perApp,
             PerApp = perApp,
             FoulLanguageEventCount = langEvents.Count,
             RecentLanguageEvents = langEvents
@@ -203,10 +202,13 @@ public static class DashboardEndpoints
         IConfiguration configuration,
         ILogger<WebApplication> logger)
     {
-        const string configPath = @"C:\ProgramData\KidMonitor\appsettings.json";
+        var programDataPath = configuration["Dashboard:ProgramDataPath"] ?? @"C:\ProgramData\KidMonitor";
+        var configPath = Path.Combine(programDataPath, "appsettings.json");
 
         try
         {
+            Directory.CreateDirectory(programDataPath);
+
             // Load existing overrides file (or create new)
             Dictionary<string, object> root;
             if (File.Exists(configPath))

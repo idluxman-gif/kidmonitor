@@ -19,12 +19,17 @@ if (args.Contains("--uninstall"))
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load overrides from ProgramData (installed config takes precedence over bundled defaults)
-const string programDataConfig = @"C:\ProgramData\KidMonitor\appsettings.json";
-if (File.Exists(programDataConfig))
+// Load overrides from ProgramData (installed config takes precedence over bundled defaults).
+// Register this at host-build time so test hosts can inject Dashboard:ProgramDataPath first.
+builder.Host.ConfigureAppConfiguration((context, config) =>
 {
-    builder.Configuration.AddJsonFile(programDataConfig, optional: true, reloadOnChange: true);
-}
+    var programDataDirectory = context.Configuration["Dashboard:ProgramDataPath"] ?? @"C:\ProgramData\KidMonitor";
+    var programDataConfig = Path.Combine(programDataDirectory, "appsettings.json");
+    if (File.Exists(programDataConfig))
+    {
+        config.AddJsonFile(programDataConfig, optional: true, reloadOnChange: true);
+    }
+});
 
 // Run as Windows Service when not in development
 builder.Services.AddWindowsService(options =>
@@ -101,7 +106,7 @@ using (var scope = app.Services.CreateScope())
 
         // SEC-01/SEC-02: Lock down the data directory so only the service virtual account
         // and local Administrators can read/write it.
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() && !app.Environment.IsEnvironment("Testing"))
         {
             var dirInfo = new DirectoryInfo(dir);
             var security = dirInfo.GetAccessControl();
