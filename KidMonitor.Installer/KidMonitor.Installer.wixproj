@@ -23,13 +23,17 @@
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
   </ItemGroup>
 
-  <!-- Reference the service and tray publish outputs -->
+  <!-- Reference the service and tray for build ordering only; actual files come from publish output -->
   <ItemGroup>
     <ProjectReference Include="..\KidMonitor.Service\KidMonitor.Service.csproj">
       <DoNotHarvest>true</DoNotHarvest>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
     <ProjectReference Include="..\KidMonitor.Tray\KidMonitor.Tray.csproj">
       <DoNotHarvest>true</DoNotHarvest>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
     </ProjectReference>
   </ItemGroup>
 </Project>
