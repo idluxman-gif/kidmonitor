@@ -39,6 +39,9 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<ContentSession>(e =>
         {
             e.HasIndex(s => s.StartedAt);
+            e.Property(s => s.ContentTitle).HasConversion(ProtectedContentConverter.RequiredString);
+            e.Property(s => s.ContentIdentifier).HasConversion(ProtectedContentConverter.OptionalString);
+            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.OptionalString);
             e.HasOne(s => s.AppSession)
              .WithMany()
              .HasForeignKey(s => s.AppSessionId)
@@ -48,6 +51,9 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<ContentSnapshot>(e =>
         {
             e.HasIndex(s => s.CapturedAt);
+            e.Property(s => s.CapturedText).HasConversion(ProtectedContentConverter.RequiredString);
+            e.Property(s => s.SourceUrl).HasConversion(ProtectedContentConverter.OptionalString);
+            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.OptionalString);
             e.HasOne(s => s.ContentSession)
              .WithMany(cs => cs.Snapshots)
              .HasForeignKey(s => s.ContentSessionId)
@@ -57,6 +63,8 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<LanguageDetectionEvent>(e =>
         {
             e.HasIndex(lde => lde.DetectedAt);
+            e.Property(lde => lde.MatchedTerm).HasConversion(ProtectedContentConverter.RequiredString);
+            e.Property(lde => lde.ContextSnippet).HasConversion(ProtectedContentConverter.RequiredString);
             e.HasOne(lde => lde.ContentSession)
              .WithMany()
              .HasForeignKey(lde => lde.ContentSessionId)

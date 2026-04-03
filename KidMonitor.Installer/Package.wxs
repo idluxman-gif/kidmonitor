@@ -27,19 +27,13 @@
     <!-- Runs after InstallFinalize when installing -->
     <CustomAction
       Id="WriteDashboardPin"
-      Script="vbscript"
-      ScriptSourceFile="WriteDashboardPin.vbs"
+      FileRef="KidMonitorServiceExe"
+      ExeCommand="--set-dashboard-pin &quot;[DASHBOARD_PIN]&quot;"
       Execute="deferred"
       Impersonate="no"
-      Return="ignore" />
-
-    <CustomAction
-      Id="SetWriteDashboardPinData"
-      Property="WriteDashboardPin"
-      Value="[DASHBOARD_PIN]" />
+      Return="check" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetWriteDashboardPinData" Before="WriteDashboardPin" Condition="NOT Installed" />
       <Custom Action="WriteDashboardPin" Before="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 

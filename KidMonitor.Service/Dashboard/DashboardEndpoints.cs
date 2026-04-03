@@ -17,6 +17,8 @@ public static class DashboardEndpoints
         // --- Auth ---
         app.MapPost("/api/auth/login", LoginAsync);
         app.MapPost("/api/auth/logout", Logout);
+        app.MapPost("/api/auth/setup", SetupPinAsync);
+        app.MapPut("/api/auth/pin", ChangePinAsync);
 
         // --- Health (no auth) ---
         app.MapGet("/api/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
@@ -39,12 +41,36 @@ public static class DashboardEndpoints
     private static IResult LoginAsync(
         HttpContext context,
         LoginRequest body,
-        IOptionsSnapshot<DashboardOptions> options)
+        IOptionsSnapshot<DashboardOptions> options,
+        LoginRateLimiter rateLimiter)
     {
-        if (body.Pin != options.Value.Pin)
+        var opts = options.Value;
+
+        // Block login until initial PIN has been set up
+        if (opts.Pin == DashboardOptions.DefaultPin)
         {
+            return Results.Json(
+                new { error = "Dashboard PIN not configured. POST /api/auth/setup with a new PIN first." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        if (rateLimiter.IsLockedOut(clientIp))
+        {
+            var expiry = rateLimiter.GetLockoutExpiry(clientIp);
+            return Results.Json(
+                new { error = "Too many failed attempts. Try again later.", lockedUntil = expiry },
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        if (body.Pin != opts.Pin)
+        {
+            rateLimiter.RecordFailure(clientIp);
             return Results.Json(new { error = "Invalid PIN." }, statusCode: StatusCodes.Status401Unauthorized);
         }
+
+        rateLimiter.RecordSuccess(clientIp);
         PinAuthMiddleware.SetAuthenticated(context);
         return Results.Ok(new { message = "Authenticated." });
     }
@@ -54,6 +80,109 @@ public static class DashboardEndpoints
     {
         PinAuthMiddleware.ClearAuthenticated(context);
         return Results.Ok(new { message = "Logged out." });
+    }
+
+    // POST /api/auth/setup
+    // Sets the initial PIN when the default "0000" is still in place.
+    // Body: { "pin": "new-pin" }
+    private static async Task<IResult> SetupPinAsync(
+        SetupPinRequest body,
+        IOptionsSnapshot<DashboardOptions> options,
+        IConfiguration configuration,
+        ILogger<WebApplication> logger)
+    {
+        if (options.Value.Pin != DashboardOptions.DefaultPin)
+        {
+            return Results.Json(
+                new { error = "PIN is already configured. Use PUT /api/auth/pin to change it." },
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (!IsValidPin(body.Pin))
+        {
+            return Results.Json(
+                new { error = "PIN must be at least 4 characters and must not be the default value." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return await SavePinToConfigAsync(body.Pin, configuration, logger);
+    }
+
+    // PUT /api/auth/pin
+    // Changes the PIN after the user is authenticated.
+    // Body: { "currentPin": "...", "newPin": "..." }
+    private static async Task<IResult> ChangePinAsync(
+        HttpContext context,
+        ChangePinRequest body,
+        IOptionsSnapshot<DashboardOptions> options,
+        IConfiguration configuration,
+        ILogger<WebApplication> logger)
+    {
+        var authed = context.Session.GetString(PinAuthMiddleware.SessionKey);
+        if (authed != "1")
+        {
+            return Results.Json(new { error = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (body.CurrentPin != options.Value.Pin)
+        {
+            return Results.Json(new { error = "Current PIN is incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (!IsValidPin(body.NewPin))
+        {
+            return Results.Json(
+                new { error = "New PIN must be at least 4 characters and must not be the default value." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return await SavePinToConfigAsync(body.NewPin, configuration, logger);
+    }
+
+    private static bool IsValidPin(string? pin) =>
+        !string.IsNullOrWhiteSpace(pin)
+        && pin.Length >= 4
+        && pin != DashboardOptions.DefaultPin;
+
+    private static async Task<IResult> SavePinToConfigAsync(
+        string newPin,
+        IConfiguration configuration,
+        ILogger<WebApplication> logger)
+    {
+        var programDataPath = configuration["Dashboard:ProgramDataPath"] ?? @"C:\ProgramData\KidMonitor";
+        var configPath = Path.Combine(programDataPath, "appsettings.json");
+
+        try
+        {
+            Directory.CreateDirectory(programDataPath);
+
+            Dictionary<string, object> root;
+            if (File.Exists(configPath))
+            {
+                var existing = await File.ReadAllTextAsync(configPath);
+                root = JsonSerializer.Deserialize<Dictionary<string, object>>(existing)
+                       ?? new Dictionary<string, object>();
+            }
+            else
+            {
+                root = new Dictionary<string, object>();
+            }
+
+            root["Dashboard"] = new { Pin = newPin };
+
+            var json = JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(configPath, json);
+
+            if (configuration is IConfigurationRoot configRoot)
+                configRoot.Reload();
+
+            return Results.Ok(new { message = "PIN updated." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to save PIN to {Path}", configPath);
+            return Results.Problem("Failed to save PIN.", statusCode: 500);
+        }
     }
 
     // GET /api/dashboard
@@ -190,9 +319,10 @@ public static class DashboardEndpoints
     }
 
     // GET /api/config
-    private static IResult GetConfigAsync(IOptionsSnapshot<MonitoringOptions> opts)
+    private static IResult GetConfigAsync(IConfiguration configuration)
     {
-        return Results.Ok(opts.Value);
+        var monitoring = DashboardConfigFile.ReadMonitoringOptions(configuration);
+        return Results.Ok(monitoring);
     }
 
     // PUT /api/config
@@ -202,8 +332,8 @@ public static class DashboardEndpoints
         IConfiguration configuration,
         ILogger<WebApplication> logger)
     {
-        var programDataPath = configuration["Dashboard:ProgramDataPath"] ?? @"C:\ProgramData\KidMonitor";
-        var configPath = Path.Combine(programDataPath, "appsettings.json");
+        var programDataPath = DashboardConfigFile.GetProgramDataPath(configuration);
+        var configPath = DashboardConfigFile.GetConfigPath(programDataPath);
 
         try
         {
@@ -261,3 +391,9 @@ public static class DashboardEndpoints
 
 /// <summary>Request body for POST /api/auth/login.</summary>
 public record LoginRequest(string Pin);
+
+/// <summary>Request body for POST /api/auth/setup.</summary>
+public record SetupPinRequest(string Pin);
+
+/// <summary>Request body for PUT /api/auth/pin.</summary>
+public record ChangePinRequest(string CurrentPin, string NewPin);

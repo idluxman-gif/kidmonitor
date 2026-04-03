@@ -8,12 +8,13 @@ namespace KidMonitor.Service.Dashboard;
 /// </summary>
 public class PinAuthMiddleware
 {
-    private const string SessionKey = "dashboard_authed";
+    internal const string SessionKey = "dashboard_authed";
 
     private static readonly HashSet<string> _exemptPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/health",
         "/api/auth/login",
+        "/api/auth/setup",
     };
 
     private readonly RequestDelegate _next;

@@ -16,20 +16,28 @@ if (args.Contains("--uninstall"))
 {
     return ServiceInstaller.Uninstall();
 }
+if (TryGetArgumentValue(args, "--set-dashboard-pin", out var dashboardPin))
+{
+    try
+    {
+        DashboardConfigFile.WriteDashboardPin(dashboardPin);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to persist dashboard PIN: {ex.Message}");
+        return 1;
+    }
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load overrides from ProgramData (installed config takes precedence over bundled defaults).
-// Register this at host-build time so test hosts can inject Dashboard:ProgramDataPath first.
-builder.Host.ConfigureAppConfiguration((context, config) =>
+// Load overrides from ProgramData (installed config takes precedence over bundled defaults)
+const string programDataConfig = @"C:\ProgramData\KidMonitor\appsettings.json";
+if (File.Exists(programDataConfig))
 {
-    var programDataDirectory = context.Configuration["Dashboard:ProgramDataPath"] ?? @"C:\ProgramData\KidMonitor";
-    var programDataConfig = Path.Combine(programDataDirectory, "appsettings.json");
-    if (File.Exists(programDataConfig))
-    {
-        config.AddJsonFile(programDataConfig, optional: true, reloadOnChange: true);
-    }
-});
+    builder.Configuration.AddJsonFile(programDataConfig, optional: true, reloadOnChange: true);
+}
 
 // Run as Windows Service when not in development
 builder.Services.AddWindowsService(options =>
@@ -68,6 +76,7 @@ builder.Services.AddSingleton<IContentCaptureAdapter, GameChatContentAdapter>();
 builder.Services.AddSingleton<ContentSnapshotChannel>();
 builder.Services.AddSingleton<IFoulLanguageDetector, ConfigurableFoulLanguageDetector>();
 builder.Services.AddSingleton<WhisperTranscriptionService>();
+builder.Services.AddSingleton<LoginRateLimiter>();
 
 // Background workers
 builder.Services.AddHostedService<MonitorWorker>();
@@ -150,3 +159,18 @@ app.MapDashboardEndpoints();
 
 app.Run();
 return 0;
+
+static bool TryGetArgumentValue(IReadOnlyList<string> args, string argumentName, out string value)
+{
+    for (var i = 0; i < args.Count - 1; i++)
+    {
+        if (string.Equals(args[i], argumentName, StringComparison.OrdinalIgnoreCase))
+        {
+            value = args[i + 1];
+            return true;
+        }
+    }
+
+    value = string.Empty;
+    return false;
+}
