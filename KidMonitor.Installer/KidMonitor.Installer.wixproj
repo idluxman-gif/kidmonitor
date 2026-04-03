@@ -1,8 +1,27 @@
-<Project Sdk="WixToolset.Sdk/5.0.0">
+<Project Sdk="WixToolset.Sdk/5.0.2">
   <PropertyGroup>
     <OutputName>KidMonitorSetup</OutputName>
     <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <!-- WiX 5.0.0 does not auto-set $(var.ProjectName.PublishDir); define them explicitly -->
+    <DefineConstants>KidMonitor.Service.PublishDir=$(MSBuildThisFileDirectory)..\KidMonitor.Service\bin\$(Configuration)\net8.0-windows10.0.17763.0\win-x64\publish\;KidMonitor.Tray.PublishDir=$(MSBuildThisFileDirectory)..\KidMonitor.Tray\bin\$(Configuration)\net8.0-windows\win-x64\publish\</DefineConstants>
   </PropertyGroup>
+
+  <!-- Publish the service and tray before building the installer -->
+  <Target Name="_PublishDependencies" BeforeTargets="ResolveReferences">
+    <MSBuild Projects="..\KidMonitor.Service\KidMonitor.Service.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64" />
+    <MSBuild Projects="..\KidMonitor.Tray\KidMonitor.Tray.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64" />
+  </Target>
+
+  <!-- WiX extensions -->
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
 
   <!-- Reference the service and tray publish outputs -->
   <ItemGroup>

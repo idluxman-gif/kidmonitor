@@ -1,6 +1,7 @@
 using KidMonitor.Core.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 namespace KidMonitor.Tests.TestHelpers;

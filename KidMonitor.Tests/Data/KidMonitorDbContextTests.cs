@@ -72,7 +72,7 @@ public sealed class KidMonitorDbContextTests : IDisposable
 
         var retrieved = await _db.AppSessions.FindAsync(session.Id);
         Assert.NotNull(retrieved!.EndedAt);
-        Assert.Equal(300, retrieved.DurationSeconds, precision: 5);
+        Assert.Equal(300, retrieved.DurationSeconds);
     }
 
     // ── NotificationLog ─────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <Package
     Name="KidMonitor"
@@ -27,50 +28,10 @@
     <CustomAction
       Id="WriteDashboardPin"
       Script="vbscript"
+      ScriptSourceFile="WriteDashboardPin.vbs"
       Execute="deferred"
       Impersonate="no"
-      Return="ignore">
-      <![CDATA[
-        Dim pin, configPath, fso, f, content
-        pin = Session.Property("CustomActionData")
-        If Len(Trim(pin)) = 0 Then pin = "0000"
-
-        configPath = "C:\ProgramData\KidMonitor\appsettings.json"
-        Set fso = CreateObject("Scripting.FileSystemObject")
-
-        ' Read existing content if present, otherwise start fresh
-        If fso.FileExists(configPath) Then
-          Set f = fso.OpenTextFile(configPath, 1)
-          content = f.ReadAll
-          f.Close
-          ' Replace or append Dashboard.Pin value using simple string injection
-          ' If Dashboard section exists, replace pin value
-          If InStr(content, """Dashboard""") > 0 Then
-            ' Replace the Pin value using regex
-            Dim re
-            Set re = New RegExp
-            re.Pattern = "(""Pin""\s*:\s*"")[^""]*("")"
-            re.Global = True
-            re.IgnoreCase = True
-            content = re.Replace(content, "$1" & pin & "$2")
-          Else
-            ' Append Dashboard section before last }
-            Dim lastBrace
-            lastBrace = InStrRev(content, "}")
-            If lastBrace > 0 Then
-              content = Left(content, lastBrace - 1) & _
-                ",""Dashboard"":{""Pin"":""" & pin & """,""Port"":5110}}"
-            End If
-          End If
-        Else
-          content = "{""Dashboard"":{""Pin"":""" & pin & """,""Port"":5110}}"
-        End If
-
-        Set f = fso.OpenTextFile(configPath, 2, True)
-        f.Write content
-        f.Close
-      ]]>
-    </CustomAction>
+      Return="ignore" />
 
     <CustomAction
       Id="SetWriteDashboardPinData"
@@ -78,36 +39,32 @@
       Value="[DASHBOARD_PIN]" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetWriteDashboardPinData" Before="InstallFinalize">NOT Installed</Custom>
-      <Custom Action="WriteDashboardPin" After="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="SetWriteDashboardPinData" Before="WriteDashboardPin" Condition="NOT Installed" />
+      <Custom Action="WriteDashboardPin" Before="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
     <!-- Simple UI with PIN prompt -->
-    <UI>
-      <UIRef Id="WixUI_Minimal" />
-    </UI>
+    <ui:WixUI Id="WixUI_Minimal" />
 
   </Package>
 
   <Fragment>
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLFOLDER" Name="KidMonitor" />
-      </Directory>
-      <Directory Id="CommonAppDataFolder">
-        <Directory Id="DATFOLDER" Name="KidMonitor" />
-      </Directory>
-      <Directory Id="ProgramMenuFolder">
-        <Directory Id="ApplicationProgramsFolder" Name="KidMonitor" />
-      </Directory>
-    </Directory>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="KidMonitor" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATFOLDER" Name="KidMonitor" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="KidMonitor" />
+    </StandardDirectory>
   </Fragment>
 
   <!-- Service binaries -->
   <Fragment>
     <ComponentGroup Id="ServiceComponents" Directory="INSTALLFOLDER">
 
-      <Component Id="ServiceExe" Guid="B1C2D3E4-F5A6-7890-ABCD-EF1234567891">
+      <Component Id="ServiceExe" Guid="B1C2D3E4-F5A6-7890-ABCD-EF1234567891" Bitness="always64">
         <File Id="KidMonitorServiceExe"
               Source="$(var.KidMonitor.Service.PublishDir)KidMonitor.Service.exe"
               KeyPath="yes" />
@@ -139,7 +96,7 @@
   <Fragment>
     <ComponentGroup Id="TrayComponents" Directory="INSTALLFOLDER">
 
-      <Component Id="TrayExe" Guid="F6A7B8C9-D0E1-2345-F012-456789012345">
+      <Component Id="TrayExe" Guid="F6A7B8C9-D0E1-2345-F012-456789012345" Bitness="always64">
         <File Id="KidMonitorTrayExe"
               Source="$(var.KidMonitor.Tray.PublishDir)KidMonitor.Tray.exe"
               KeyPath="yes" />
@@ -166,19 +123,17 @@
       </Component>
 
       <!-- Default appsettings.json (NeverOverwrite = preserves existing user config) -->
-      <Component Id="AppSettings" Guid="C2D3E4F5-A6B7-8901-BCDE-F12345678902">
+      <Component Id="AppSettings" Guid="C2D3E4F5-A6B7-8901-BCDE-F12345678902" NeverOverwrite="yes">
         <File Id="AppSettingsJson"
               Source="..\KidMonitor.Service\appsettings.json"
-              KeyPath="yes"
-              NeverOverwrite="yes" />
+              KeyPath="yes" />
       </Component>
 
       <!-- Default word list placeholder -->
-      <Component Id="WordList" Guid="E4F5A6B7-C8D9-0123-DEF0-234567890123">
+      <Component Id="WordList" Guid="E4F5A6B7-C8D9-0123-DEF0-234567890123" NeverOverwrite="yes">
         <File Id="WordListTxt"
               Source="wordlist.txt"
-              KeyPath="yes"
-              NeverOverwrite="yes" />
+              KeyPath="yes" />
       </Component>
 
     </ComponentGroup>
