@@ -97,21 +97,14 @@ public class DailySummaryWorker : BackgroundService
         var foulByApp = detectionEvents
             .GroupBy(e => e.AppName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count());
-        var youtubeSnippets = detectionEvents
-            .Where(e => e.AppName.Contains("youtube", StringComparison.OrdinalIgnoreCase))
-            .Select(e => e.ContextSnippet)
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(10)
-            .ToList();
-
         var reportDir = Path.Combine(
             Path.GetDirectoryName(_databaseOptions.Value.Path) ?? ".", "reports");
         Directory.CreateDirectory(reportDir);
         var reportPath = Path.Combine(reportDir, $"summary-{date:yyyy-MM-dd}.html");
 
-        var html = BuildHtml(date, totalSeconds, breakdown, foulCount, foulByApp, youtubeSnippets);
+        var html = BuildHtml(date, totalSeconds, breakdown, foulCount, foulByApp, null);
         await File.WriteAllTextAsync(reportPath, html, Encoding.UTF8, ct);
+        ApplyReportFileAcl(reportPath);
 
         var summary = new DailySummary
         {
@@ -168,16 +161,52 @@ public class DailySummaryWorker : BackgroundService
                 sb.AppendLine("</table>");
             }
 
-            if (youtubeSnippets is { Count: > 0 })
-            {
-                sb.AppendLine("<h3>YouTube Context Snippets</h3><ul>");
-                foreach (var snippet in youtubeSnippets)
-                    sb.AppendLine($"<li>{System.Net.WebUtility.HtmlEncode(snippet)}</li>");
-                sb.AppendLine("</ul>");
-            }
         }
 
         sb.AppendLine("</body></html>");
         return sb.ToString();
+    }
+
+    private void ApplyReportFileAcl(string reportPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            var fileInfo = new FileInfo(reportPath);
+            var security = fileInfo.GetAccessControl();
+
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"NT SERVICE\KidMonitorService",
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.None,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"BUILTIN\Administrators",
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.None,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                @"BUILTIN\Users",
+                System.Security.AccessControl.FileSystemRights.ReadAndExecute | System.Security.AccessControl.FileSystemRights.Write,
+                System.Security.AccessControl.InheritanceFlags.None,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Deny));
+
+            fileInfo.SetAccessControl(security);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply ACLs to daily report {Path}.", reportPath);
+        }
     }
 }

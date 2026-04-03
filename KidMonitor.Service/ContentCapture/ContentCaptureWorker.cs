@@ -106,7 +106,7 @@ public class ContentCaptureWorker : BackgroundService
                         _openSessions[sessionKey] = (open.SessionId, snapshot.CapturedText);
                         _snapshotChannel.Writer.TryWrite(snapshot);
 
-                        _logger.LogDebug("Content changed [{App}]: {Text}", snapshot.AppName, snapshot.CapturedText);
+                        _logger.LogDebug("Content changed within active session for {App}.", snapshot.AppName);
                     }
                 }
                 else
@@ -129,7 +129,10 @@ public class ContentCaptureWorker : BackgroundService
 
                     _openSessions[sessionKey] = (session.Id, snapshot.CapturedText);
                     _snapshotChannel.Writer.TryWrite(snapshot);
-                    _logger.LogInformation("Content session opened [{App}]: {Text}", snapshot.AppName, snapshot.CapturedText);
+                    _logger.LogInformation(
+                        "Content session opened for {App} ({ContentType}).",
+                        snapshot.AppName,
+                        snapshot.ContentType);
                 }
 
                 break; // Only the first matching adapter wins per window

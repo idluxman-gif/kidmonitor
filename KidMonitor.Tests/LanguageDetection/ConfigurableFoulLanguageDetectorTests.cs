@@ -230,6 +230,40 @@ public class ConfigurableFoulLanguageDetectorTests
         Assert.Single(results);
     }
 
+    [Fact]
+    public void Scan_Detects_PunctuationSeparatedLetters()
+    {
+        var sut = Build(new List<string> { "bad" });
+
+        var results = sut.Scan("that video title is b.a.d", "App");
+
+        Assert.Single(results);
+        Assert.Equal("bad", results[0].MatchedTerm);
+        Assert.Contains("b.a.d", results[0].ContextSnippet);
+    }
+
+    [Fact]
+    public void Scan_Detects_L33tWithPunctuationSeparators()
+    {
+        var sut = Build(new List<string> { "bad" });
+
+        var results = sut.Scan("that message says b-@-d", "App");
+
+        Assert.Single(results);
+        Assert.Equal("bad", results[0].MatchedTerm);
+        Assert.Contains("b-@-d", results[0].ContextSnippet);
+    }
+
+    [Fact]
+    public void Scan_DoesNotFlag_PunctuationSeparatedSubstringInsideLongerWord()
+    {
+        var sut = Build(new List<string> { "ass" });
+
+        var results = sut.Scan("that spelling exercise says cl.a.s.s.ic", "App");
+
+        Assert.Empty(results);
+    }
+
     // ── Context snippet ────────────────────────────────────────────────────
 
     [Fact]

@@ -97,8 +97,10 @@ public class LanguageDetectionWorker : BackgroundService
             return;
 
         _logger.LogWarning(
-            "Foul language detected [{Source}] in {App}: {Matches} match(es). First: '{Term}'.",
-            source, snapshot.AppName, matches.Count, matches[0].MatchedTerm);
+            "Foul language detected [{Source}] in {App}: {Matches} match(es).",
+            source,
+            snapshot.AppName,
+            matches.Count);
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KidMonitorDbContext>();

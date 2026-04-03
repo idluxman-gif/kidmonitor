@@ -32,8 +32,6 @@ public sealed class ToastNotificationServiceTests : IDisposable
         _connection.Dispose();
     }
 
-    // ── SendAppStartedAsync ─────────────────────────────────────────────────
-
     [Fact]
     public async Task SendAppStartedAsync_PersistsNotificationLog_WithCategoryAppStart()
     {
@@ -61,12 +59,13 @@ public sealed class ToastNotificationServiceTests : IDisposable
     {
         var session = new AppSession
         {
-            ProcessName = "msedge", DisplayName = "Edge", StartedAt = DateTime.UtcNow
+            ProcessName = "msedge",
+            DisplayName = "Edge",
+            StartedAt = DateTime.UtcNow
         };
         _db.AppSessions.Add(session);
         await _db.SaveChangesAsync();
 
-        // Toast may throw in headless environment — service must swallow it
         var ex = await Record.ExceptionAsync(() => _sut.SendAppStartedAsync(session));
         Assert.Null(ex);
     }
@@ -74,10 +73,11 @@ public sealed class ToastNotificationServiceTests : IDisposable
     [Fact]
     public async Task SendAppStartedAsync_WhenToastFails_SetsDelivered_False()
     {
-        // In headless test env the toast call will throw; we verify Delivered=false is persisted
         var session = new AppSession
         {
-            ProcessName = "notepad", DisplayName = "Notepad", StartedAt = DateTime.UtcNow
+            ProcessName = "notepad",
+            DisplayName = "Notepad",
+            StartedAt = DateTime.UtcNow
         };
         _db.AppSessions.Add(session);
         await _db.SaveChangesAsync();
@@ -85,13 +85,9 @@ public sealed class ToastNotificationServiceTests : IDisposable
         await _sut.SendAppStartedAsync(session);
 
         var log = await _db.NotificationLogs.SingleAsync();
-        // Delivered may be true (if toast succeeded on this machine) or false (headless).
-        // Either way, the log entry must exist.
         Assert.NotNull(log);
         Assert.Equal(session.Id, log.AppSessionId);
     }
-
-    // ── SendFoulLanguageDetectedAsync ───────────────────────────────────────
 
     [Fact]
     public async Task SendFoulLanguageDetectedAsync_PersistsLog_WithCategoryFoulLanguage()
@@ -112,15 +108,13 @@ public sealed class ToastNotificationServiceTests : IDisposable
         Assert.Null(ex);
     }
 
-    // ── SendDailySummaryAsync ───────────────────────────────────────────────
-
     [Fact]
     public async Task SendDailySummaryAsync_PersistsLog_WithCategoryDailySummary()
     {
         var summary = new DailySummary
         {
             ReportDate = DateOnly.FromDateTime(DateTime.Today),
-            TotalScreenTimeSeconds = 5400, // 1h 30m
+            TotalScreenTimeSeconds = 5400,
             FoulLanguageEventCount = 1,
             GeneratedAt = DateTime.UtcNow
         };
@@ -132,7 +126,6 @@ public sealed class ToastNotificationServiceTests : IDisposable
         var log = await _db.NotificationLogs.SingleAsync();
         Assert.Equal("DailySummary", log.Category);
         Assert.Contains("Daily Summary", log.Title);
-        // 5400s = 1h 30m
         Assert.Contains("1h 30m", log.Body);
         Assert.Contains("Foul language events: 1", log.Body);
     }
@@ -153,15 +146,14 @@ public sealed class ToastNotificationServiceTests : IDisposable
         Assert.Null(ex);
     }
 
-    // ── NotifyContentAlertAsync ─────────────────────────────────────────────
-
     [Fact]
     public async Task NotifyContentAlertAsync_PersistsLog_WithCategoryContentAlert()
     {
+        const string snippet = "some context";
         var alert = new ContentAlertEvent(
             AppName: "YouTube",
             Timestamp: new DateTime(2026, 4, 2, 14, 30, 0, DateTimeKind.Utc),
-            ContextSnippet: "some context",
+            ContextSnippet: snippet,
             Source: "text");
 
         await _sut.NotifyContentAlertAsync(alert);
@@ -172,11 +164,12 @@ public sealed class ToastNotificationServiceTests : IDisposable
         Assert.Contains("YouTube", log.Body);
         Assert.Contains("text", log.Body);
         Assert.Contains("14:30:00", log.Body);
+        Assert.DoesNotContain(snippet, log.Body);
         Assert.Null(log.AppSessionId);
     }
 
     [Fact]
-    public async Task NotifyContentAlertAsync_TruncatesLongSnippet()
+    public async Task NotifyContentAlertAsync_DoesNotPersistRawSnippetInLogBody()
     {
         var longSnippet = new string('x', 80);
         var alert = new ContentAlertEvent("WhatsApp", DateTime.UtcNow, longSnippet, "text");
@@ -184,7 +177,8 @@ public sealed class ToastNotificationServiceTests : IDisposable
         await _sut.NotifyContentAlertAsync(alert);
 
         var log = await _db.NotificationLogs.SingleAsync();
-        Assert.Contains("…", log.Body);
+        Assert.DoesNotContain(longSnippet, log.Body);
+        Assert.Contains("Potential foul language detected.", log.Body);
     }
 
     [Fact]
@@ -196,12 +190,15 @@ public sealed class ToastNotificationServiceTests : IDisposable
         Assert.Null(ex);
     }
 
-    // ── Multiple sends ──────────────────────────────────────────────────────
-
     [Fact]
     public async Task MultipleNotifications_AreAllPersisted()
     {
-        var session = new AppSession { ProcessName = "chrome", DisplayName = "Chrome", StartedAt = DateTime.UtcNow };
+        var session = new AppSession
+        {
+            ProcessName = "chrome",
+            DisplayName = "Chrome",
+            StartedAt = DateTime.UtcNow
+        };
         _db.AppSessions.Add(session);
         await _db.SaveChangesAsync();
 

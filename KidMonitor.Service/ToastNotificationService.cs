@@ -48,11 +48,8 @@ public class ToastNotificationService : INotificationService
 
     public async Task NotifyContentAlertAsync(ContentAlertEvent e, CancellationToken ct = default)
     {
-        var snippet = e.ContextSnippet.Length > 60
-            ? e.ContextSnippet[..60] + "…"
-            : e.ContextSnippet;
         var title = "Content Alert";
-        var body = $"[{e.AppName}] [{e.Source}] {e.Timestamp:HH:mm:ss} — {snippet}";
+        var body = $"[{e.AppName}] [{e.Source}] {e.Timestamp:HH:mm:ss} - Potential foul language detected.";
         await SendAndLogAsync("ContentAlert", title, body, null, ct);
     }
 

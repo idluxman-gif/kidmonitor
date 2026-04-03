@@ -22,6 +22,14 @@ public sealed class KidMonitorDbContextTests : IDisposable
         _connection.Dispose();
     }
 
+    private async Task<string?> ReadTextColumnAsync(string tableName, string columnName, int id)
+    {
+        await using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT {columnName} FROM {tableName} WHERE Id = $id";
+        command.Parameters.AddWithValue("$id", id);
+        return (string?)await command.ExecuteScalarAsync();
+    }
+
     // ── AppSession ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -122,6 +130,28 @@ public sealed class KidMonitorDbContextTests : IDisposable
 
         Assert.Equal(session.Id, retrieved.AppSessionId);
         Assert.Equal("chrome", retrieved.AppSession!.ProcessName);
+    }
+
+    [Fact]
+    public async Task NotificationLog_Body_IsEncryptedAtRest()
+    {
+        var log = new NotificationLog
+        {
+            Category = "ContentAlert",
+            Title = "Content Alert",
+            Body = "[YouTube] [text] 14:30:00 - Potential foul language detected.",
+            SentAt = DateTime.UtcNow,
+            Delivered = true,
+        };
+        _db.NotificationLogs.Add(log);
+        await _db.SaveChangesAsync();
+
+        var storedBody = await ReadTextColumnAsync("NotificationLogs", "Body", log.Id);
+
+        Assert.NotEqual(log.Body, storedBody);
+
+        var retrieved = await _db.NotificationLogs.AsNoTracking().SingleAsync(n => n.Id == log.Id);
+        Assert.Equal(log.Body, retrieved.Body);
     }
 
     [Fact]
@@ -229,6 +259,35 @@ public sealed class KidMonitorDbContextTests : IDisposable
         Assert.Equal("chrome", retrieved.AppSession!.ProcessName);
     }
 
+    [Fact]
+    public async Task ContentSession_SensitiveFields_AreEncryptedAtRest()
+    {
+        var session = new ContentSession
+        {
+            AppName = "YouTube",
+            ContentType = ContentType.VideoTitle,
+            ContentTitle = "Funny cats compilation",
+            ContentIdentifier = "https://youtube.example/watch?v=123",
+            Channel = "Cat Channel",
+            StartedAt = DateTime.UtcNow,
+        };
+        _db.ContentSessions.Add(session);
+        await _db.SaveChangesAsync();
+
+        var storedTitle = await ReadTextColumnAsync("ContentSessions", "ContentTitle", session.Id);
+        var storedIdentifier = await ReadTextColumnAsync("ContentSessions", "ContentIdentifier", session.Id);
+        var storedChannel = await ReadTextColumnAsync("ContentSessions", "Channel", session.Id);
+
+        Assert.NotEqual(session.ContentTitle, storedTitle);
+        Assert.NotEqual(session.ContentIdentifier, storedIdentifier);
+        Assert.NotEqual(session.Channel, storedChannel);
+
+        var retrieved = await _db.ContentSessions.AsNoTracking().SingleAsync(s => s.Id == session.Id);
+        Assert.Equal(session.ContentTitle, retrieved.ContentTitle);
+        Assert.Equal(session.ContentIdentifier, retrieved.ContentIdentifier);
+        Assert.Equal(session.Channel, retrieved.Channel);
+    }
+
     // ── ContentSnapshot ─────────────────────────────────────────────────────
 
     [Fact]
@@ -277,6 +336,70 @@ public sealed class KidMonitorDbContextTests : IDisposable
 
         Assert.Equal(cs.Id, retrieved.ContentSessionId);
         Assert.Equal("YouTube", retrieved.ContentSession!.AppName);
+    }
+
+    [Fact]
+    public async Task ContentSnapshot_CapturedText_IsEncryptedAtRest()
+    {
+        var snapshot = new ContentSnapshot
+        {
+            AppName = "WhatsApp Desktop",
+            ContentType = ContentType.MessageText,
+            CapturedText = "hey how are you",
+            Channel = "Alice",
+            CapturedAt = DateTime.UtcNow,
+        };
+        _db.ContentSnapshots.Add(snapshot);
+        await _db.SaveChangesAsync();
+
+        var storedText = await ReadTextColumnAsync("ContentSnapshots", "CapturedText", snapshot.Id);
+        var storedChannel = await ReadTextColumnAsync("ContentSnapshots", "Channel", snapshot.Id);
+
+        Assert.NotEqual(snapshot.CapturedText, storedText);
+        Assert.NotEqual(snapshot.Channel, storedChannel);
+
+        var retrieved = await _db.ContentSnapshots.AsNoTracking().SingleAsync(s => s.Id == snapshot.Id);
+        Assert.Equal(snapshot.CapturedText, retrieved.CapturedText);
+        Assert.Equal(snapshot.Channel, retrieved.Channel);
+    }
+
+    [Fact]
+    public async Task ContentSnapshot_LegacyPlaintextRows_RemainReadable()
+    {
+        await using var command = _connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ContentSnapshots (
+                ContentSessionId,
+                AppName,
+                ContentType,
+                CapturedText,
+                SourceUrl,
+                Channel,
+                CapturedAt
+            )
+            VALUES (
+                NULL,
+                $appName,
+                $contentType,
+                $capturedText,
+                NULL,
+                $channel,
+                $capturedAt
+            );
+            SELECT last_insert_rowid();
+            """;
+        command.Parameters.AddWithValue("$appName", "Discord");
+        command.Parameters.AddWithValue("$contentType", (int)ContentType.GameChat);
+        command.Parameters.AddWithValue("$capturedText", "legacy plaintext");
+        command.Parameters.AddWithValue("$channel", "general");
+        command.Parameters.AddWithValue("$capturedAt", DateTime.UtcNow);
+
+        var rowId = (long)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("Row insert failed."));
+
+        var snapshot = await _db.ContentSnapshots.AsNoTracking().SingleAsync(s => s.Id == (int)rowId);
+
+        Assert.Equal("legacy plaintext", snapshot.CapturedText);
+        Assert.Equal("general", snapshot.Channel);
     }
 
     [Fact]
@@ -331,5 +454,31 @@ public sealed class KidMonitorDbContextTests : IDisposable
             .FirstAsync(s => s.Id == cs.Id);
 
         Assert.Equal(2, retrieved.Snapshots.Count);
+    }
+
+    [Fact]
+    public async Task LanguageDetectionEvent_SensitiveFields_AreEncryptedAtRest()
+    {
+        var ev = new LanguageDetectionEvent
+        {
+            AppName = "Discord",
+            Source = "text",
+            MatchedTerm = "badword",
+            ContextSnippet = "context with badword here",
+            DetectedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.LanguageDetectionEvents.Add(ev);
+        await _db.SaveChangesAsync();
+
+        var storedTerm = await ReadTextColumnAsync("LanguageDetectionEvents", "MatchedTerm", ev.Id);
+        var storedSnippet = await ReadTextColumnAsync("LanguageDetectionEvents", "ContextSnippet", ev.Id);
+
+        Assert.NotEqual(ev.MatchedTerm, storedTerm);
+        Assert.NotEqual(ev.ContextSnippet, storedSnippet);
+
+        var retrieved = await _db.LanguageDetectionEvents.AsNoTracking().SingleAsync(e => e.Id == ev.Id);
+        Assert.Equal(ev.MatchedTerm, retrieved.MatchedTerm);
+        Assert.Equal(ev.ContextSnippet, retrieved.ContextSnippet);
     }
 }

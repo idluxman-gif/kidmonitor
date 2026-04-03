@@ -1,5 +1,6 @@
 using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
+using KidMonitor.Core.Security;
 using KidMonitor.Service;
 using KidMonitor.Service.ContentCapture;
 using KidMonitor.Service.Dashboard;
@@ -60,6 +61,7 @@ builder.Services.Configure<DashboardOptions>(builder.Configuration.GetSection("D
 
 // Database
 var dbPath = builder.Configuration["Database:Path"] ?? @"C:\ProgramData\KidMonitor\kidmonitor.db";
+builder.Services.AddSingleton<IEncryptionService, WindowsDpapiEncryptionService>();
 builder.Services.AddDbContext<KidMonitorDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"),
     ServiceLifetime.Scoped);
@@ -146,7 +148,10 @@ using (var scope = app.Services.CreateScope())
             dirInfo.SetAccessControl(security);
         }
     }
-    db.Database.Migrate();
+    if (!app.Environment.IsEnvironment("Testing"))
+    {
+        db.Database.Migrate();
+    }
 }
 
 // Middleware pipeline

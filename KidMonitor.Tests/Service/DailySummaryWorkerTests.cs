@@ -165,15 +165,15 @@ public sealed class DailySummaryWorkerTests : IDisposable
     }
 
     [Fact]
-    public void BuildHtml_ContentMonitoringSection_ShowsYoutubeSnippets()
+    public void BuildHtml_ContentMonitoringSection_DoesNotRenderContextSnippets()
     {
         var snippets = new List<string> { "bad word in video title" };
         var html = InvokeBuildHtml(
             DateOnly.Parse("2026-04-02"), 0, new Dictionary<string, int>(),
             1, null, snippets);
 
-        Assert.Contains("YouTube Context Snippets", html);
-        Assert.Contains("bad word in video title", html);
+        Assert.DoesNotContain("YouTube Context Snippets", html);
+        Assert.DoesNotContain("bad word in video title", html);
     }
 
     [Fact]

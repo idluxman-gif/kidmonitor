@@ -1,11 +1,19 @@
 using KidMonitor.Core.Models;
+using KidMonitor.Core.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace KidMonitor.Core.Data;
 
 public class KidMonitorDbContext : DbContext
 {
-    public KidMonitorDbContext(DbContextOptions<KidMonitorDbContext> options) : base(options) { }
+    private readonly IEncryptionService _encryptionService;
+
+    public KidMonitorDbContext(
+        DbContextOptions<KidMonitorDbContext> options,
+        IEncryptionService? encryptionService = null) : base(options)
+    {
+        _encryptionService = encryptionService ?? WindowsDpapiEncryptionService.Shared;
+    }
 
     public DbSet<AppSession> AppSessions => Set<AppSession>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
@@ -25,6 +33,7 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<NotificationLog>(e =>
         {
             e.HasIndex(n => n.SentAt);
+            e.Property(n => n.Body).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
             e.HasOne(n => n.AppSession)
              .WithMany()
              .HasForeignKey(n => n.AppSessionId)
@@ -39,9 +48,9 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<ContentSession>(e =>
         {
             e.HasIndex(s => s.StartedAt);
-            e.Property(s => s.ContentTitle).HasConversion(ProtectedContentConverter.RequiredString);
-            e.Property(s => s.ContentIdentifier).HasConversion(ProtectedContentConverter.OptionalString);
-            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.OptionalString);
+            e.Property(s => s.ContentTitle).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
+            e.Property(s => s.ContentIdentifier).HasConversion(ProtectedContentConverter.CreateOptionalString(_encryptionService));
+            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.CreateOptionalString(_encryptionService));
             e.HasOne(s => s.AppSession)
              .WithMany()
              .HasForeignKey(s => s.AppSessionId)
@@ -51,9 +60,9 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<ContentSnapshot>(e =>
         {
             e.HasIndex(s => s.CapturedAt);
-            e.Property(s => s.CapturedText).HasConversion(ProtectedContentConverter.RequiredString);
-            e.Property(s => s.SourceUrl).HasConversion(ProtectedContentConverter.OptionalString);
-            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.OptionalString);
+            e.Property(s => s.CapturedText).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
+            e.Property(s => s.SourceUrl).HasConversion(ProtectedContentConverter.CreateOptionalString(_encryptionService));
+            e.Property(s => s.Channel).HasConversion(ProtectedContentConverter.CreateOptionalString(_encryptionService));
             e.HasOne(s => s.ContentSession)
              .WithMany(cs => cs.Snapshots)
              .HasForeignKey(s => s.ContentSessionId)
@@ -63,8 +72,8 @@ public class KidMonitorDbContext : DbContext
         modelBuilder.Entity<LanguageDetectionEvent>(e =>
         {
             e.HasIndex(lde => lde.DetectedAt);
-            e.Property(lde => lde.MatchedTerm).HasConversion(ProtectedContentConverter.RequiredString);
-            e.Property(lde => lde.ContextSnippet).HasConversion(ProtectedContentConverter.RequiredString);
+            e.Property(lde => lde.MatchedTerm).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
+            e.Property(lde => lde.ContextSnippet).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
             e.HasOne(lde => lde.ContentSession)
              .WithMany()
              .HasForeignKey(lde => lde.ContentSessionId)
