@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Security: Explicit transitive overrides for packages with known CVEs.
+    dotnet list package (vulnerable, include-transitive) flagged these.
+    These entries force NuGet to resolve safe patched versions.
+    Condition excludes the WiX Installer project (.wixproj) which targets native.
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' != '.wixproj'">
+    <!-- System.Text.Json GHSA-hh2w-p6rv-4g7w (High), GHSA-8g4q-xg66-9fp4 (High): fixed in 8.0.5 -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- Microsoft.Extensions.Caching.Memory GHSA-qj66-m88j-hmgj (High): fixed in 8.0.1 -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.1" />
+    <!-- System.Drawing.Common GHSA-rxg9-xrhp-64gj (Critical): fixed in 6.0.0+; Windows targets only -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0"
+                      Condition="$(TargetFramework.Contains('windows'))" />
+  </ItemGroup>
+
+</Project>
