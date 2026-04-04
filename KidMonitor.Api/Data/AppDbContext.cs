@@ -9,6 +9,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<PushToken> PushTokens => Set<PushToken>();
+    public DbSet<PushReceipt> PushReceipts => Set<PushReceipt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(pt => pt.Parent)
              .WithMany(p => p.PushTokens)
              .HasForeignKey(pt => pt.ParentId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PushReceipt>(e =>
+        {
+            e.HasKey(pr => pr.Id);
+            e.HasIndex(pr => pr.ParentId);
+            e.HasIndex(pr => pr.SentAt);
+            e.HasOne(pr => pr.Parent)
+             .WithMany()
+             .HasForeignKey(pr => pr.ParentId)
              .OnDelete(DeleteBehavior.Cascade);
         });
     }

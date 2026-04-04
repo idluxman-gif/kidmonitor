@@ -1,4 +1,6 @@
 using System.Text;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Endpoints;
 using KidMonitor.Api.Services;
@@ -40,6 +42,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ── Push notifications ────────────────────────────────────────────────────────
+builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+
+// Named HttpClients for APNs (production and sandbox endpoints differ).
+builder.Services.AddHttpClient("apns-production", c =>
+    c.BaseAddress = new Uri("https://api.push.apple.com/"));
+builder.Services.AddHttpClient("apns-sandbox", c =>
+    c.BaseAddress = new Uri("https://api.sandbox.push.apple.com/"));
+
+// ── Firebase / FCM ────────────────────────────────────────────────────────────
+InitializeFirebase(builder.Configuration);
+
 var app = builder.Build();
 
 // ── Migrate on startup ────────────────────────────────────────────────────────
@@ -57,5 +71,29 @@ app.UseAuthorization();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapDeviceEndpoints();
+app.MapPushTokenEndpoints();
 
 app.Run();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+static void InitializeFirebase(IConfiguration config)
+{
+    var credentialJson = config["Firebase:CredentialJson"];
+    var credentialFile = config["Firebase:CredentialFile"];
+
+    if (!string.IsNullOrWhiteSpace(credentialJson))
+    {
+        FirebaseApp.Create(new AppOptions
+        {
+            Credential = GoogleCredential.FromJson(credentialJson),
+        });
+    }
+    else if (!string.IsNullOrWhiteSpace(credentialFile))
+    {
+        FirebaseApp.Create(new AppOptions
+        {
+            Credential = GoogleCredential.FromFile(credentialFile),
+        });
+    }
+    // No Firebase config → FCM disabled; PushNotificationService skips gracefully.
+}
