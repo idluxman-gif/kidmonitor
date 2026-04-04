@@ -1,5 +1,14 @@
-using System.Net;
-using System.Net.Http.Json;
+using System.Text.Json;
+using KidMonitor.Core.Configuration;
+using KidMonitor.Core.Data;
+using KidMonitor.Core.Models;
+using KidMonitor.Service.Cloud;
+using KidMonitor.Tests.TestHelpers;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 using WireMock.Server;
@@ -7,62 +16,139 @@ using WireMock.Server;
 namespace KidMonitor.Tests.CloudSync;
 
 /// <summary>
-/// Integration tests for the PC-side CloudSyncService (WHA-54).
+/// Integration tests for the cloud sync pipeline (WHA-58).
 ///
-/// These tests use WireMock.Net as a mock cloud API server. Each test starts a real
-/// HTTP listener on an ephemeral port, drives the CloudSyncService under test, and
-/// asserts the expected interactions.
+/// These tests drive <see cref="CloudEventPublisher"/> against a real WireMock.Net HTTP server
+/// to validate the full HTTP request/response path for all 6 E2E test scenarios.
+/// A real in-process SQLite database is used for the offline event buffer so that
+/// buffering and flush behaviour is exercised end-to-end.
 ///
-/// STATUS: These tests define the contract that the WHA-54 implementation must satisfy.
-///         Tests marked [Fact(Skip=...)] require the CloudSyncService class to exist.
-///         Tests marked [Fact] verify the mock-server harness itself and run today.
-///
-/// Once WHA-54 delivers CloudSyncService, remove all Skip annotations and wire up
-/// the real implementation in place of the HttpClient stubs.
+/// Why CloudEventPublisher and not CloudSyncService?
+///   CloudSyncService is a thin background drain loop — its unit tests live in
+///   CloudSyncServiceTests.cs. The component that owns all cloud-protocol decisions
+///   (auth header, retry classification, offline buffering) is CloudEventPublisher.
+///   Testing it against a live HTTP server gives the highest confidence that the
+///   real wire format is correct.
 /// </summary>
 public sealed class CloudSyncIntegrationTests : IDisposable
 {
+    private const string DeviceId = "device-001";
+    private const string DeviceToken = "test-device-token";
+
     private readonly WireMockServer _mockApi;
+    private readonly SqliteConnection _connection;
+    private readonly KidMonitorDbContext _db;
+    private readonly CloudEventPublisher _publisher;
 
     public CloudSyncIntegrationTests()
     {
         _mockApi = WireMockServer.Start();
+        _db = InMemoryDbHelper.CreateDb(out _connection);
+        _publisher = BuildPublisher(_mockApi.Url!);
     }
 
-    public void Dispose() => _mockApi.Stop();
+    public void Dispose()
+    {
+        try { _mockApi.Stop(); } catch { /* already stopped by a test */ }
+        _db.Dispose();
+        _connection.Dispose();
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Harness smoke test — verifies WireMock.Net is correctly set up
+    // Scenario 1 — Happy path
+    // PC service posts event → cloud API returns 202 → correct JSON body +
+    // Authorization header sent → nothing buffered locally.
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task MockServer_CanReceiveAndRespondToEventsPost()
+    public async Task Scenario1_HappyPath_PostsEventToCloudApi_Returns202()
     {
         _mockApi
             .Given(Request.Create().WithPath("/events").UsingPost())
             .RespondWith(Response.Create()
                 .WithStatusCode(202)
                 .WithHeader("Content-Type", "application/json")
-                .WithBody("{\"eventId\":\"test-event-id\"}"));
+                .WithBody("{\"eventId\":\"abc-123\"}"));
 
-        using var client = new HttpClient { BaseAddress = new Uri(_mockApi.Url!) };
-        var payload = new
-        {
-            deviceId = "device-abc",
-            eventType = "foul_language_detected",
-            timestamp = DateTime.UtcNow,
-            metadata = new { appName = "WhatsApp", source = "text" }
-        };
+        await _publisher.PublishAsync(CreateEvent("foul_language_detected"), CancellationToken.None);
 
-        var response = await client.PostAsJsonAsync("/events", payload);
+        var calls = _mockApi.LogEntries
+            .Where(e => e.RequestMessage.Path == "/events")
+            .ToList();
 
-        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("eventId", body);
+        Assert.Single(calls);
+
+        var call = calls[0];
+        Assert.Equal("POST", call.RequestMessage.Method.ToUpperInvariant());
+        Assert.Contains($"Bearer {DeviceToken}", call.RequestMessage.Headers!["Authorization"].First());
+
+        using var json = JsonDocument.Parse(call.RequestMessage.Body!);
+        Assert.Equal(DeviceId, json.RootElement.GetProperty("deviceId").GetString());
+        Assert.Equal("foul_language_detected", json.RootElement.GetProperty("eventType").GetString());
+
+        Assert.Empty(await _db.PendingCloudEvents.ToListAsync());
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Scenario 2a — Offline resilience: API unreachable → event buffered locally
+    // ──────────────────────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task MockServer_Returns429_WhenRateLimitStubIsConfigured()
+    public async Task Scenario2_OfflineResilience_BuffersEventsWhenApiUnreachable()
+    {
+        // Simulate the cloud API going down
+        _mockApi.Stop();
+
+        await _publisher.PublishAsync(CreateEvent("app_opened"), CancellationToken.None);
+
+        var pending = await _db.PendingCloudEvents.ToListAsync();
+        Assert.Single(pending);
+        Assert.Equal("app_opened", pending[0].EventType);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Scenario 2b — Offline resilience: API recovers → all buffered events flushed
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Scenario2_OfflineResilience_FlushesBufferedEventsOnReconnect()
+    {
+        // Pre-seed 3 buffered events that accumulated while the API was down
+        for (var i = 0; i < 3; i++)
+        {
+            _db.PendingCloudEvents.Add(new PendingCloudEvent
+            {
+                EventType = "foul_language_detected",
+                Timestamp = DateTime.UtcNow.AddMinutes(-i),
+                MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string?>
+                {
+                    ["appName"] = $"App{i}",
+                    ["matchedTerm"] = "badword",
+                }),
+                EnqueuedAt = DateTime.UtcNow.AddMinutes(-i),
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        // API is back — stub all POST /events to return 202
+        _mockApi
+            .Given(Request.Create().WithPath("/events").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(202));
+
+        await _publisher.FlushPendingAsync(CancellationToken.None);
+
+        // All 3 events sent and removed from the buffer
+        Assert.Empty(await _db.PendingCloudEvents.ToListAsync());
+        var calls = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
+        Assert.Equal(3, calls.Count);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Scenario 5 — Rate limiting: 429 treated as transient → event buffered
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Scenario5_RateLimit_BuffersEventGracefully_OnHttp429()
     {
         _mockApi
             .Given(Request.Create().WithPath("/events").UsingPost())
@@ -70,215 +156,111 @@ public sealed class CloudSyncIntegrationTests : IDisposable
                 .WithStatusCode(429)
                 .WithHeader("Retry-After", "30"));
 
-        using var client = new HttpClient { BaseAddress = new Uri(_mockApi.Url!) };
-        var response = await client.PostAsJsonAsync("/events", new { deviceId = "x" });
+        // Must not throw; 429 is transient so the event should be buffered for later replay
+        await _publisher.PublishAsync(CreateEvent("foul_language_detected"), CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
-        Assert.True(response.Headers.Contains("Retry-After"));
+        var pending = await _db.PendingCloudEvents.ToListAsync();
+        Assert.Single(pending);
+        Assert.Equal("foul_language_detected", pending[0].EventType);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Scenario 1 — Happy path: CloudSyncService posts event successfully
+    // Retry policy — 5xx transient: event buffered, no exception propagated
+    // Note: CloudEventPublisher classifies 5xx as transient and buffers rather
+    // than retrying inline; retry happens on the next FlushPendingAsync cycle.
     // ──────────────────────────────────────────────────────────────────────────
 
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task Scenario1_HappyPath_PostsEventToCloudApi_Returns202()
+    [Fact]
+    public async Task RetryPolicy_5xxError_BuffersEventAndDoesNotThrow()
     {
-        // Arrange
         _mockApi
             .Given(Request.Create().WithPath("/events").UsingPost())
-            .RespondWith(Response.Create()
-                .WithStatusCode(202)
-                .WithBody("{\"eventId\":\"abc-123\"}"));
+            .RespondWith(Response.Create().WithStatusCode(503));
 
-        // TODO (WHA-54): Replace with real CloudSyncService wired to _mockApi.Url
-        // var sut = new CloudSyncService(
-        //     baseUrl: _mockApi.Url,
-        //     deviceToken: "test-device-token",
-        //     logger: NullLogger<CloudSyncService>.Instance);
-        //
-        // var evt = new MonitoringEvent(
-        //     DeviceId: "device-001",
-        //     EventType: "foul_language_detected",
-        //     Timestamp: DateTime.UtcNow,
-        //     Metadata: new { AppName = "WhatsApp", Source = "text" });
-        //
-        // // Act
-        // await sut.PostEventAsync(evt);
-        //
-        // // Assert
-        // var calls = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
-        // Assert.Single(calls);
-        // Assert.Equal("POST", calls[0].RequestMessage.Method);
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
+        await _publisher.PublishAsync(CreateEvent("foul_language_detected"), CancellationToken.None);
+
+        Assert.Single(await _db.PendingCloudEvents.ToListAsync());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Scenario 2 — Offline resilience: events buffered when API is unreachable
+    // Retry policy — 4xx permanent: event dropped, exactly 1 HTTP call, no buffer
     // ──────────────────────────────────────────────────────────────────────────
 
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task Scenario2_OfflineResilience_BuffersEventsWhenApiUnreachable()
+    [Fact]
+    public async Task RetryPolicy_4xxError_DropsEvent_NoBufferNoRetry()
     {
-        // Arrange: configure mock to simulate unreachable API (connection refused)
-        // Stop the mock server to simulate the API being down
-        _mockApi.Stop();
-
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(
-        //     baseUrl: "http://localhost:19999",  // non-listening port
-        //     deviceToken: "test-token",
-        //     logger: NullLogger<CloudSyncService>.Instance);
-        //
-        // var evt = new MonitoringEvent("device-001", "app_opened", DateTime.UtcNow, null);
-        //
-        // // Act — should not throw; should buffer
-        // await sut.PostEventAsync(evt);
-        //
-        // // Assert
-        // Assert.Equal(1, sut.BufferedEventCount);
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
-    }
-
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task Scenario2_OfflineResilience_FlushesBufferedEventsOnReconnect()
-    {
-        // Arrange: 3 events buffered while offline
-        _mockApi.Stop();
-
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(...);
-        // Buffer 3 events while API is down
-        // Restart mock API
-        // _mockApi = WireMockServer.Start(port: <same port>);
-        // _mockApi.Given(Request.Create().WithPath("/events").UsingPost())
-        //         .RespondWith(Response.Create().WithStatusCode(202));
-        //
-        // await sut.FlushBufferedEventsAsync(CancellationToken.None);
-        //
-        // Assert all 3 were sent
-        // var calls = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
-        // Assert.Equal(3, calls.Count);
-        // Assert.Equal(0, sut.BufferedEventCount);
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Scenario 5 — Rate limiting: CloudSyncService backs off on 429
-    // ──────────────────────────────────────────────────────────────────────────
-
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task Scenario5_RateLimit_BacksOffGracefully_OnHttp429()
-    {
-        // Arrange: first 60 calls succeed; 61st returns 429
-        var callCount = 0;
-        _mockApi
-            .Given(Request.Create().WithPath("/events").UsingPost())
-            .RespondWith(Response.Create()
-                .WithCallback(req =>
-                {
-                    callCount++;
-                    return callCount > 60
-                        ? new WireMock.ResponseMessage
-                        {
-                            StatusCode = 429,
-                            Headers = new Dictionary<string, WireMock.Types.WireMockList<string>>
-                            {
-                                ["Retry-After"] = new() { "30" }
-                            }
-                        }
-                        : new WireMock.ResponseMessage { StatusCode = 202 };
-                }));
-
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(...);
-        // Post 65 events
-        // Assert: no exception thrown (graceful backoff, not crash)
-        // Assert: sut logs contain "Rate limited" or "429" message
-        // Assert: after back-off window, posting resumes normally
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Retry policy: 5xx triggers exponential backoff; 4xx does not retry
-    // ──────────────────────────────────────────────────────────────────────────
-
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task RetryPolicy_5xxError_RetriesUpToThreeTimes()
-    {
-        // Arrange: first 2 calls return 503, third returns 202
-        var callCount = 0;
-        _mockApi
-            .Given(Request.Create().WithPath("/events").UsingPost())
-            .RespondWith(Response.Create()
-                .WithCallback(_ =>
-                {
-                    callCount++;
-                    return new WireMock.ResponseMessage
-                    {
-                        StatusCode = callCount < 3 ? 503 : 202
-                    };
-                }));
-
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(..., retryCount: 3, baseDelayMs: 10);
-        // await sut.PostEventAsync(evt);
-        // Assert.Equal(3, callCount);  // 2 retries + 1 success
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
-    }
-
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
-    public async Task RetryPolicy_4xxError_DoesNotRetry()
-    {
-        // Arrange: API returns 401 (invalid device token)
         _mockApi
             .Given(Request.Create().WithPath("/events").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(401));
 
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(...);
-        // await sut.PostEventAsync(evt);  // should not retry on 4xx
-        // Assert: exactly 1 call made (no retries)
-        // var calls = _mockApi.LogEntries.Count(e => e.RequestMessage.Path == "/events");
-        // Assert.Equal(1, calls);
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
+        await _publisher.PublishAsync(CreateEvent("foul_language_detected"), CancellationToken.None);
+
+        // 4xx is a permanent failure: event must be dropped (not buffered)
+        Assert.Empty(await _db.PendingCloudEvents.ToListAsync());
+
+        // Must not retry — exactly 1 HTTP attempt
+        var calls = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
+        Assert.Single(calls);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Device token: included in Authorization header
+    // Device token: Authorization: Bearer header included on every outbound request
     // ──────────────────────────────────────────────────────────────────────────
 
-    [Fact(Skip = "Pending WHA-54: CloudSyncService implementation required")]
+    [Fact]
     public async Task PostEvent_IncludesDeviceTokenInAuthorizationHeader()
     {
-        const string deviceToken = "Bearer test-device-token-xyz";
-
         _mockApi
-            .Given(Request.Create()
-                .WithPath("/events")
-                .UsingPost()
-                .WithHeader("Authorization", deviceToken))
+            .Given(Request.Create().WithPath("/events").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(202));
 
-        // TODO (WHA-54):
-        // var sut = new CloudSyncService(baseUrl: _mockApi.Url, deviceToken: deviceToken, ...);
-        // await sut.PostEventAsync(evt);
-        // Assert: exactly 1 matched call (header assertion is in the stub mapping)
-        // var matched = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
-        // Assert.Single(matched);
-        await Task.CompletedTask;
-        throw new SkipException("Pending WHA-54");
-    }
-}
+        await _publisher.PublishAsync(CreateEvent("foul_language_detected"), CancellationToken.None);
 
-/// <summary>
-/// Thrown inside Skip-annotated tests to surface them as skipped rather than as an error.
-/// Replace with xunit.SkipFactAttribute or similar if the project adds that package.
-/// </summary>
-file sealed class SkipException(string reason) : Exception(reason);
+        var calls = _mockApi.LogEntries.Where(e => e.RequestMessage.Path == "/events").ToList();
+        Assert.Single(calls);
+        Assert.Contains($"Bearer {DeviceToken}", calls[0].RequestMessage.Headers!["Authorization"].First());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private CloudEventPublisher BuildPublisher(string baseUrl)
+    {
+        var httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(f => f.CreateClient(CloudEventPublisher.HttpClientName))
+            .Returns(httpClient);
+
+        var credentialStore = new Mock<ICloudDeviceCredentialStore>();
+        credentialStore
+            .Setup(s => s.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CloudDeviceCredentials(DeviceId, DeviceToken));
+
+        var options = Options.Create(new CloudApiOptions
+        {
+            BaseUrl = baseUrl,
+            OfflineQueueCapacity = 500,
+        });
+
+        var offlineStore = new OfflineCloudEventStore(
+            InMemoryDbHelper.CreateScopeFactory(_db),
+            options,
+            NullLogger<OfflineCloudEventStore>.Instance);
+
+        return new CloudEventPublisher(
+            httpClientFactory.Object,
+            options,
+            credentialStore.Object,
+            offlineStore,
+            NullLogger<CloudEventPublisher>.Instance);
+    }
+
+    private static MonitoringEvent CreateEvent(string eventType) =>
+        new(eventType, DateTime.UtcNow, new Dictionary<string, string?>
+        {
+            ["appName"] = "WhatsApp Desktop",
+            ["matchedTerm"] = "badword",
+        });
+}
