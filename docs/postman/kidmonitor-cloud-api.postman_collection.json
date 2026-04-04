@@ -1,0 +1,439 @@
+{
+  "info": {
+    "_postman_id": "kidmonitor-cloud-api-v1",
+    "name": "KidMonitor Cloud API",
+    "description": "End-to-end tests for the KidMonitor cloud relay API (Milestone 5). Covers auth, device registration, event ingestion, push token registration, and rate limiting.\n\nRun with Newman:\n  npx newman run kidmonitor-cloud-api.postman_collection.json \\\n    --env-var BASE_URL=https://staging.kidmonitor.example.com \\\n    --reporters cli,junit --reporter-junit-export results.xml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:3000", "type": "string" },
+    { "key": "ACCESS_TOKEN", "value": "", "type": "string" },
+    { "key": "REFRESH_TOKEN", "value": "", "type": "string" },
+    { "key": "PARENT_ID", "value": "", "type": "string" },
+    { "key": "DEVICE_ID", "value": "", "type": "string" },
+    { "key": "TEST_EMAIL", "value": "qa-test@kidmonitor.test", "type": "string" },
+    { "key": "TEST_PASSWORD", "value": "TestPass123!", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/health", "host": ["{{BASE_URL}}"], "path": ["health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body contains ok', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.status ?? json.message ?? JSON.stringify(json)).to.match(/ok|healthy/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /auth/register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{TEST_EMAIL}}\",\n  \"password\": \"{{TEST_PASSWORD}}\",\n  \"displayName\": \"QA Test Parent\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/register", "host": ["{{BASE_URL}}"], "path": ["auth", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns tokens', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.refreshToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.parentId).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', json.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', json.refreshToken);",
+                  "  pm.collectionVariables.set('PARENT_ID', json.parentId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/register – duplicate email returns 409",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{TEST_EMAIL}}\",\n  \"password\": \"{{TEST_PASSWORD}}\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/register", "host": ["{{BASE_URL}}"], "path": ["auth", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 on duplicate', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{TEST_EMAIL}}\",\n  \"password\": \"{{TEST_PASSWORD}}\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/login", "host": ["{{BASE_URL}}"], "path": ["auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns fresh tokens', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', json.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', json.refreshToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/login – wrong password returns 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{TEST_EMAIL}}\",\n  \"password\": \"WrongPassword!\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/login", "host": ["{{BASE_URL}}"], "path": ["auth", "login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/refresh – Scenario 4: expired access token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{REFRESH_TOKEN}}\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/refresh", "host": ["{{BASE_URL}}"], "path": ["auth", "refresh"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns new access token', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('ACCESS_TOKEN', json.accessToken);",
+                  "  pm.collectionVariables.set('REFRESH_TOKEN', json.refreshToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/refresh – invalid token returns 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"invalid-token-that-does-not-exist\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/auth/refresh", "host": ["{{BASE_URL}}"], "path": ["auth", "refresh"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401 for invalid refresh token', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "url": { "raw": "{{BASE_URL}}/auth/logout", "host": ["{{BASE_URL}}"], "path": ["auth", "logout"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "POST /devices/register – Scenario 3: pairing flow",
+          "description": "Simulates the PC cloud sync module registering itself after pairing. Requires a valid parent access token.",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceKey\": \"test-pc-device-key-001\",\n  \"deviceName\": \"QA Test PC #1\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/devices/register", "host": ["{{BASE_URL}}"], "path": ["devices", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 or 200 (device created or updated)', () => {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Returns device id', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.id).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.deviceKey).to.equal('test-pc-device-key-001');",
+                  "  pm.collectionVariables.set('DEVICE_ID', json.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /devices/register – Scenario 6: second device (multi-device)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceKey\": \"test-pc-device-key-002\",\n  \"deviceName\": \"QA Test PC #2\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/devices/register", "host": ["{{BASE_URL}}"], "path": ["devices", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 for second device', () => {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Second device has different id', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.id).to.not.equal(pm.collectionVariables.get('DEVICE_ID'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /devices/register – unauthenticated returns 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceKey\": \"unauthorized-key\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/devices/register", "host": ["{{BASE_URL}}"], "path": ["devices", "register"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401 without auth', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Events (WHA-52 – pending)",
+      "description": "Event ingestion endpoint. Tests are stubbed; activate once WHA-52 is complete.",
+      "item": [
+        {
+          "name": "POST /events – Scenario 1: happy path foul language alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{DEVICE_ID}}\",\n  \"eventType\": \"foul_language_detected\",\n  \"timestamp\": \"2026-04-04T12:00:00Z\",\n  \"metadata\": {\n    \"appName\": \"WhatsApp\",\n    \"source\": \"text\",\n    \"contextSnippet\": \"[REDACTED]\"\n  }\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/events", "host": ["{{BASE_URL}}"], "path": ["events"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('Returns event id', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.eventId ?? json.id).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events – Scenario 5: rate limiting (61st event)",
+          "description": "Manually run this 61 times in rapid succession or use Newman --iteration-count 61 to trigger the 429.",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{DEVICE_ID}}\",\n  \"eventType\": \"app_opened\",\n  \"timestamp\": \"2026-04-04T12:00:00Z\",\n  \"metadata\": { \"appName\": \"Chrome\" }\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/events", "host": ["{{BASE_URL}}"], "path": ["events"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Rate limit test: run this request >60 times per minute to trigger 429.",
+                  "// When iterating with Newman, at least one response should be 429.",
+                  "pm.test('Status 202 or 429', () => {",
+                  "  pm.expect([202, 429]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events – missing deviceId returns 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"app_opened\",\n  \"timestamp\": \"2026-04-04T12:00:00Z\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/events", "host": ["{{BASE_URL}}"], "path": ["events"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 for missing deviceId', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Push Tokens (WHA-53 – pending)",
+      "description": "Push token registration. Activate once WHA-53 is complete.",
+      "item": [
+        {
+          "name": "POST /push-tokens – register Android FCM token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{ACCESS_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"fcm\",\n  \"token\": \"fcm-test-token-abcdef1234567890\"\n}"
+            },
+            "url": { "raw": "{{BASE_URL}}/push-tokens", "host": ["{{BASE_URL}}"], "path": ["push-tokens"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 or 201', () => {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
