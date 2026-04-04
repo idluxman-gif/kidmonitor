@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kidmonitor
+      POSTGRES_PASSWORD: kidmonitor_dev
+      POSTGRES_DB: kidmonitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kidmonitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: KidMonitor.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=kidmonitor;Username=kidmonitor;Password=kidmonitor_dev"
+      Jwt__Secret: "${JWT_SECRET:-dev-only-secret-change-in-production-must-be-32plus-chars}"
+      Jwt__Issuer: "KidMonitor.Api"
+      Jwt__Audience: "KidMonitor.Clients"
+
+volumes:
+  pgdata:
