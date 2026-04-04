@@ -1,0 +1,17 @@
+[build]
+# Use the Dockerfile at repo root context; Railway injects $PORT automatically.
+dockerfilePath = "KidMonitor.Api/Dockerfile"
+
+[deploy]
+# Railway sets $PORT; ASP.NET Core must listen on it.
+# ASPNETCORE_URLS is set here so the app binds to Railway's assigned port.
+startCommand = "dotnet KidMonitor.Api.dll"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+[[deploy.environmentVariables]]
+# Tell ASP.NET Core to bind to Railway's dynamic PORT.
+# All other secrets (JWT_SECRET, DATABASE_URL, etc.) must be set in the
+# Railway dashboard under the service's "Variables" tab.
+ASPNETCORE_URLS = "http://+:$PORT"
+ASPNETCORE_ENVIRONMENT = "Production"

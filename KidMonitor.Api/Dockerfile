@@ -4,6 +4,7 @@ EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
+COPY ["Directory.Build.props", "./"]
 COPY ["KidMonitor.Api/KidMonitor.Api.csproj", "KidMonitor.Api/"]
 RUN dotnet restore "KidMonitor.Api/KidMonitor.Api.csproj"
 COPY KidMonitor.Api/ KidMonitor.Api/

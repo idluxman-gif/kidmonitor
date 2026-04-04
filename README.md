@@ -53,6 +53,46 @@ All settings live in `C:\ProgramData\KidMonitor\appsettings.json` after installa
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for a complete reference of every configuration field.
 
+## Cloud API (Staging / Production)
+
+`KidMonitor.Api` is an ASP.NET Core 8 web API that acts as the cloud relay between the Windows service and the parent's mobile app. It is deployed as a Docker container.
+
+### Deploy to Railway (recommended)
+
+1. Create a new Railway project and connect this GitHub repository.
+2. Railway auto-detects `railway.toml` and builds via `KidMonitor.Api/Dockerfile`.
+3. Add a **PostgreSQL** plugin to the project (Railway dashboard → **+ New** → **Database** → **Add PostgreSQL**). Railway injects `DATABASE_URL` automatically.
+4. Set the following variables under **Variables** (service level):
+
+   | Variable | Description |
+   |---|---|
+   | `JWT_SECRET` | Random 32+ char secret (`openssl rand -base64 48`) |
+   | `FIREBASE_CREDENTIAL_JSON` | Firebase service-account JSON (single-line) |
+   | `APNS_KEY_ID` | Apple APNs key ID |
+   | `APNS_TEAM_ID` | Apple developer Team ID |
+   | `APNS_BUNDLE_ID` | iOS app bundle ID |
+   | `APNS_P8_KEY_CONTENT` | Contents of the `.p8` private key file |
+   | `APNS_USE_SANDBOX` | `true` for TestFlight, `false` for production |
+
+   See [`.env.example`](.env.example) for the full variable reference.
+
+5. Railway applies EF Core migrations automatically on startup (`db.Database.Migrate()`).
+6. Verify the deployment: `curl https://<your-app>.up.railway.app/health` → `{"status":"ok"}`.
+
+### Staging URL
+
+> `https://kidmonitor-api-staging.up.railway.app`
+>
+> Update this value in `KidMonitor.Tests/appsettings.Test.json` and the Newman collection (`docs/postman/KidMonitor.postman_collection.json`) once the real URL is known.
+
+### Deploy to Render (alternative)
+
+1. Create a new **Web Service** and connect this repo.
+2. Set **Docker** as the runtime, Dockerfile path: `KidMonitor.Api/Dockerfile`, root directory: `.`.
+3. Add a **PostgreSQL** managed database; copy the Internal Connection String to `DATABASE_URL`.
+4. Add all variables from the table above in the **Environment** tab; also add `ASPNETCORE_URLS=http://+:$PORT`.
+5. Render applies migrations on startup and exposes the service on its generated `.onrender.com` URL.
+
 ## License
 
 Private / proprietary. All rights reserved.
