@@ -42,6 +42,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ── In-memory cache (used for rate limiting) ──────────────────────────────────
+builder.Services.AddMemoryCache();
+
 // ── Push notifications ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
 
@@ -72,6 +75,7 @@ app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapDeviceEndpoints();
 app.MapPushTokenEndpoints();
+app.MapEventEndpoints();
 
 app.Run();
 

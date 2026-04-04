@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +38,7 @@ public static class DeviceEndpoints
                 existing.DeviceName = req.DeviceName.Trim();
 
             await db.SaveChangesAsync();
-            return Results.Ok(DeviceResponse.From(existing));
+            return Results.Ok(DeviceResponse.From(existing, includeToken: false));
         }
 
         var device = new Device
@@ -45,18 +46,20 @@ public static class DeviceEndpoints
             ParentId = parentId,
             DeviceKey = req.DeviceKey.Trim(),
             DeviceName = req.DeviceName?.Trim() ?? "Unknown Device",
+            DeviceToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48)),
         };
 
         db.Devices.Add(device);
         await db.SaveChangesAsync();
 
-        return Results.Created($"/devices/{device.Id}", DeviceResponse.From(device));
+        return Results.Created($"/devices/{device.Id}", DeviceResponse.From(device, includeToken: true));
     }
 }
 
 public record RegisterDeviceRequest(string DeviceKey, string? DeviceName);
-public record DeviceResponse(Guid Id, string DeviceKey, string DeviceName, DateTime RegisteredAt, DateTime LastSeenAt)
+public record DeviceResponse(Guid Id, string DeviceKey, string DeviceName, string? DeviceToken, DateTime RegisteredAt, DateTime LastSeenAt)
 {
-    public static DeviceResponse From(Device d) =>
-        new(d.Id, d.DeviceKey, d.DeviceName, d.RegisteredAt, d.LastSeenAt);
+    // DeviceToken is only populated on first registration (null on re-registration since the secret is not re-exposed).
+    public static DeviceResponse From(Device d, bool includeToken = false) =>
+        new(d.Id, d.DeviceKey, d.DeviceName, includeToken ? d.DeviceToken : null, d.RegisteredAt, d.LastSeenAt);
 }

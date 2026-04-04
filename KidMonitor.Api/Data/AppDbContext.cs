@@ -23,6 +23,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(d => d.Id);
             e.HasIndex(d => d.DeviceKey).IsUnique();
+            e.HasIndex(d => d.DeviceToken).IsUnique();
             e.HasOne(d => d.Parent)
              .WithMany(p => p.Devices)
              .HasForeignKey(d => d.ParentId)
