@@ -68,3 +68,39 @@ public class DatabaseOptions
 {
     public string Path { get; set; } = @"C:\ProgramData\KidMonitor\kidmonitor.db";
 }
+
+/// <summary>
+/// Configuration for relaying monitoring events to the cloud API.
+/// </summary>
+public class CloudApiOptions
+{
+    public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional fallback device identifier used when secure pairing credentials
+    /// have not yet been written to disk.
+    /// </summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional fallback device token used before the pairing flow persists
+    /// credentials to the secure local store.
+    /// </summary>
+    public string DeviceToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// DPAPI-encrypted file containing the paired device id/token payload.
+    /// </summary>
+    public string CredentialsFilePath { get; set; } = @"C:\ProgramData\KidMonitor\cloud-device.json";
+
+    /// <summary>
+    /// Maximum number of monitoring events buffered locally while the cloud API
+    /// is unavailable.
+    /// </summary>
+    public int OfflineQueueCapacity { get; set; } = 500;
+
+    /// <summary>
+    /// Interval between idle flush attempts for buffered events.
+    /// </summary>
+    public int FlushIntervalSeconds { get; set; } = 30;
+}

@@ -2,6 +2,7 @@ using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
 using KidMonitor.Service;
+using KidMonitor.Service.Cloud;
 using KidMonitor.Service.LanguageDetection;
 using KidMonitor.Tests.TestHelpers;
 using Microsoft.Data.Sqlite;
@@ -73,12 +74,14 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
 
     private LanguageDetectionWorker BuildWorker(
         ContentSnapshotChannel channel,
+        MonitoringEventChannel monitoringEventChannel,
         IFoulLanguageDetector detector,
         Mock<INotificationService> notificationMock,
         int cooldownSeconds = 60)
     {
         return new LanguageDetectionWorker(
             channel,
+            monitoringEventChannel,
             detector,
             InMemoryDbHelper.CreateScopeFactory(_db),
             notificationMock.Object,
@@ -93,11 +96,16 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task ExecuteAsync_CancelsCleanly_WhenTokenPreCancelled()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector.Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
                 .Returns(Array.Empty<DetectionMatch>());
 
-        var worker = BuildWorker(channel, detector.Object, new Mock<INotificationService>());
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            new Mock<INotificationService>());
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -113,6 +121,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task ProcessSnapshot_PersistsLanguageDetectionEvent_ToDb()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -123,7 +132,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Setup(n => n.NotifyContentAlertAsync(It.IsAny<ContentAlertEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 0);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 0);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await worker.StartAsync(CancellationToken.None);
@@ -153,6 +167,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task ProcessSnapshot_PersistsMultipleMatches_AsMultipleEvents()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -167,7 +182,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Setup(n => n.NotifyContentAlertAsync(It.IsAny<ContentAlertEvent>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 0);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 0);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await worker.StartAsync(CancellationToken.None);
@@ -191,12 +211,17 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task ProcessSnapshot_DoesNotPersistEvent_WhenNoMatches()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
             .Returns(Array.Empty<DetectionMatch>());
 
-        var worker = BuildWorker(channel, detector.Object, new Mock<INotificationService>());
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            new Mock<INotificationService>());
 
         await worker.StartAsync(CancellationToken.None);
 
@@ -220,6 +245,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task Throttle_SendsOneNotification_ForTwoRapidSnapshotsFromSameApp()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -231,7 +257,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Returns(Task.CompletedTask);
 
         // 60s cooldown — two rapid snapshots should only fire one notification
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 60);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 60);
 
         await worker.StartAsync(CancellationToken.None);
 
@@ -253,6 +284,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task Throttle_SendsNotification_ForDifferentApps()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -264,7 +296,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Returns(Task.CompletedTask);
 
         // 60s cooldown — but different apps should each send their own notification
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 60);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 60);
 
         await worker.StartAsync(CancellationToken.None);
 
@@ -285,6 +322,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task Throttle_SendsTwoNotifications_WhenCooldownIsZero()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -296,7 +334,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Returns(Task.CompletedTask);
 
         // 0s cooldown — every snapshot should send a notification
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 0);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 0);
 
         await worker.StartAsync(CancellationToken.None);
 
@@ -319,6 +362,7 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
     public async Task ProcessSnapshot_ContentAlertEvent_HasCorrectAppNameAndSource()
     {
         var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
         var detector = new Mock<IFoulLanguageDetector>();
         detector
             .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
@@ -331,7 +375,12 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
             .Callback<ContentAlertEvent, CancellationToken>((e, _) => captured = e)
             .Returns(Task.CompletedTask);
 
-        var worker = BuildWorker(channel, detector.Object, notificationMock, cooldownSeconds: 0);
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 0);
 
         await worker.StartAsync(CancellationToken.None);
 
@@ -349,5 +398,48 @@ public sealed class LanguageDetectionWorkerTests : IDisposable
         Assert.NotNull(captured);
         Assert.Equal("WhatsApp Desktop", captured!.AppName);
         Assert.Equal("text", captured.Source);
+    }
+
+    [Fact]
+    public async Task ProcessSnapshot_EnqueuesMonitoringEvent_ForCloudSync()
+    {
+        var channel = new ContentSnapshotChannel();
+        var monitoringEventChannel = new MonitoringEventChannel();
+        var detector = new Mock<IFoulLanguageDetector>();
+        detector
+            .Setup(d => d.Scan(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(new[] { new DetectionMatch("badword", "context snippet") });
+
+        var notificationMock = new Mock<INotificationService>();
+        notificationMock
+            .Setup(n => n.NotifyContentAlertAsync(It.IsAny<ContentAlertEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var worker = BuildWorker(
+            channel,
+            monitoringEventChannel,
+            detector.Object,
+            notificationMock,
+            cooldownSeconds: 0);
+
+        await worker.StartAsync(CancellationToken.None);
+
+        channel.Writer.TryWrite(new ContentSnapshot
+        {
+            AppName = "YouTube",
+            ContentType = ContentType.VideoTitle,
+            CapturedText = "video title with badword",
+            CapturedAt = DateTime.UtcNow,
+        });
+
+        await Task.Delay(300, CancellationToken.None);
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.True(monitoringEventChannel.Reader.TryRead(out var monitoringEvent));
+        Assert.NotNull(monitoringEvent);
+        Assert.Equal("foul_language_detected", monitoringEvent!.EventType);
+        Assert.Equal("YouTube", monitoringEvent.Metadata["appName"]);
+        Assert.Equal("badword", monitoringEvent.Metadata["matchedTerm"]);
+        Assert.Equal("text", monitoringEvent.Metadata["source"]);
     }
 }

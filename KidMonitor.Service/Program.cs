@@ -2,10 +2,13 @@ using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Security;
 using KidMonitor.Service;
+using KidMonitor.Service.Cloud;
 using KidMonitor.Service.ContentCapture;
 using KidMonitor.Service.Dashboard;
 using KidMonitor.Service.LanguageDetection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Polly;
 
 // Handle --install / --uninstall CLI args before building host
 if (args.Contains("--install"))
@@ -58,6 +61,7 @@ builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection
 builder.Services.Configure<FoulLanguageOptions>(builder.Configuration.GetSection("FoulLanguage"));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection("Database"));
 builder.Services.Configure<DashboardOptions>(builder.Configuration.GetSection("Dashboard"));
+builder.Services.Configure<CloudApiOptions>(builder.Configuration.GetSection("CloudApi"));
 
 // Database
 var dbPath = builder.Configuration["Database:Path"] ?? @"C:\ProgramData\KidMonitor\kidmonitor.db";
@@ -68,6 +72,25 @@ builder.Services.AddDbContext<KidMonitorDbContext>(options =>
 
 // Services
 builder.Services.AddSingleton<INotificationService, ToastNotificationService>();
+builder.Services.AddSingleton<MonitoringEventChannel>();
+builder.Services.AddSingleton<ICloudDeviceCredentialStore, DpapiCloudDeviceCredentialStore>();
+builder.Services.AddSingleton<OfflineCloudEventStore>();
+builder.Services.AddSingleton<ICloudEventPublisher, CloudEventPublisher>();
+builder.Services.AddHttpClient(CloudEventPublisher.HttpClientName, (serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<CloudApiOptions>>().Value;
+        if (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri))
+        {
+            client.BaseAddress = baseUri;
+        }
+        client.Timeout = TimeSpan.FromSeconds(15);
+    })
+    .AddPolicyHandler(_ => Policy<HttpResponseMessage>
+        .Handle<HttpRequestException>()
+        .OrResult(response => CloudEventPublisher.IsTransientStatusCode(response.StatusCode))
+        .WaitAndRetryAsync(
+            retryCount: 3,
+            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(2 * Math.Pow(2, retryAttempt - 1))));
 
 // Content capture adapters (registered as IContentCaptureAdapter, resolved as IEnumerable)
 builder.Services.AddSingleton<IContentCaptureAdapter, YouTubeContentAdapter>();
@@ -86,6 +109,7 @@ builder.Services.AddHostedService<ProcessTrackingWorker>();
 builder.Services.AddHostedService<DailySummaryWorker>();
 builder.Services.AddHostedService<ContentCaptureWorker>();
 builder.Services.AddHostedService<LanguageDetectionWorker>();
+builder.Services.AddHostedService<CloudSyncService>();
 
 // Session (cookie-based PIN auth for dashboard)
 builder.Services.AddDistributedMemoryCache();

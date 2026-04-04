@@ -1,6 +1,7 @@
 using KidMonitor.Core.Configuration;
 using KidMonitor.Core.Data;
 using KidMonitor.Core.Models;
+using KidMonitor.Service.Cloud;
 using Microsoft.Extensions.Options;
 
 namespace KidMonitor.Service.LanguageDetection;
@@ -20,6 +21,7 @@ namespace KidMonitor.Service.LanguageDetection;
 public class LanguageDetectionWorker : BackgroundService
 {
     private readonly ContentSnapshotChannel _channel;
+    private readonly MonitoringEventChannel _monitoringEvents;
     private readonly IFoulLanguageDetector _detector;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly INotificationService _notifications;
@@ -33,6 +35,7 @@ public class LanguageDetectionWorker : BackgroundService
 
     public LanguageDetectionWorker(
         ContentSnapshotChannel channel,
+        MonitoringEventChannel monitoringEvents,
         IFoulLanguageDetector detector,
         IServiceScopeFactory scopeFactory,
         INotificationService notifications,
@@ -41,6 +44,7 @@ public class LanguageDetectionWorker : BackgroundService
         ILogger<LanguageDetectionWorker> logger)
     {
         _channel = channel;
+        _monitoringEvents = monitoringEvents;
         _detector = detector;
         _scopeFactory = scopeFactory;
         _notifications = notifications;
@@ -104,6 +108,7 @@ public class LanguageDetectionWorker : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KidMonitorDbContext>();
+        var cloudEvents = new List<MonitoringEvent>(matches.Count);
 
         foreach (var match in matches)
         {
@@ -118,8 +123,25 @@ public class LanguageDetectionWorker : BackgroundService
                 CreatedAt = DateTime.UtcNow,
             };
             db.LanguageDetectionEvents.Add(ev);
+
+            cloudEvents.Add(new MonitoringEvent(
+                MonitoringEventTypes.FoulLanguageDetected,
+                ev.DetectedAt,
+                new Dictionary<string, string?>
+                {
+                    ["appName"] = snapshot.AppName,
+                    ["source"] = source,
+                    ["matchedTerm"] = match.MatchedTerm,
+                    ["contextSnippet"] = match.ContextSnippet,
+                    ["contentSessionId"] = snapshot.ContentSessionId?.ToString(),
+                }));
         }
         await db.SaveChangesAsync(ct);
+
+        foreach (var cloudEvent in cloudEvents)
+        {
+            _monitoringEvents.Writer.TryWrite(cloudEvent);
+        }
 
         // Throttle: skip notification if within cooldown window for this app+source.
         var cooldownSecs = _options.CurrentValue.Notifications.FoulLanguageCooldownSeconds;

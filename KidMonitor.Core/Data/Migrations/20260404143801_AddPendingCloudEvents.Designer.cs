@@ -3,6 +3,7 @@ using System;
 using KidMonitor.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace KidMonitor.Core.Data.Migrations
 {
     [DbContext(typeof(KidMonitorDbContext))]
-    partial class KidMonitorDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260404143801_AddPendingCloudEvents")]
+    partial class AddPendingCloudEvents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.3");

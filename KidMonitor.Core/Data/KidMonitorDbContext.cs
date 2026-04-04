@@ -21,6 +21,7 @@ public class KidMonitorDbContext : DbContext
     public DbSet<ContentSession> ContentSessions => Set<ContentSession>();
     public DbSet<ContentSnapshot> ContentSnapshots => Set<ContentSnapshot>();
     public DbSet<LanguageDetectionEvent> LanguageDetectionEvents => Set<LanguageDetectionEvent>();
+    public DbSet<PendingCloudEvent> PendingCloudEvents => Set<PendingCloudEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -78,6 +79,12 @@ public class KidMonitorDbContext : DbContext
              .WithMany()
              .HasForeignKey(lde => lde.ContentSessionId)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PendingCloudEvent>(e =>
+        {
+            e.HasIndex(pce => pce.EnqueuedAt);
+            e.Property(pce => pce.MetadataJson).HasConversion(ProtectedContentConverter.CreateRequiredString(_encryptionService));
         });
     }
 }
