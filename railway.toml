@@ -2,6 +2,6 @@
 dockerfilePath = "KidMonitor.Api/Dockerfile"
 
 [deploy]
-startCommand = "dotnet KidMonitor.Api.dll"
+startCommand = "dotnet KidMonitor.Api.dll --urls http://+:$PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
