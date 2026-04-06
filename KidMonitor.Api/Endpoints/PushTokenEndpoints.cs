@@ -59,7 +59,7 @@ public static class PushTokenEndpoints
     // DELETE /push-tokens
     // Body: { "platform": "fcm|apns" }
     private static async Task<IResult> RemoveToken(
-        RemovePushTokenRequest req,
+        [FromBody] RemovePushTokenRequest req,
         ClaimsPrincipal user,
         [FromServices] AppDbContext db)
     {
