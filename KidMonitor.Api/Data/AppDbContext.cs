@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Parent> Parents => Set<Parent>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Event> Events => Set<Event>();
+    public DbSet<PairingSession> PairingSessions => Set<PairingSession>();
     public DbSet<PushToken> PushTokens => Set<PushToken>();
     public DbSet<PushReceipt> PushReceipts => Set<PushReceipt>();
 
@@ -37,6 +38,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
              .WithMany(d => d.Events)
              .HasForeignKey(ev => ev.DeviceId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PairingSession>(e =>
+        {
+            e.HasKey(ps => ps.Id);
+            e.HasIndex(ps => ps.PairingCode).IsUnique();
+            e.HasIndex(ps => ps.ExpiresAt);
+            e.HasIndex(ps => ps.DeviceKey);
+            e.HasOne(ps => ps.Parent)
+             .WithMany()
+             .HasForeignKey(ps => ps.ParentId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(ps => ps.Device)
+             .WithMany()
+             .HasForeignKey(ps => ps.DeviceId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<PushToken>(e =>

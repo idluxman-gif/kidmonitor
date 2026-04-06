@@ -30,6 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\KidMonitor.Api\KidMonitor.Api.csproj" />
     <ProjectReference Include="..\KidMonitor.Core\KidMonitor.Core.csproj" />
     <ProjectReference Include="..\KidMonitor.Service\KidMonitor.Service.csproj" />
     <ProjectReference Include="..\KidMonitor.Tray\KidMonitor.Tray.csproj" />

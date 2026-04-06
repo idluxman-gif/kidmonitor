@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "KidMonitor Parent",
+    "slug": "kidmonitor-parent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "src/assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "kidmonitor-parent",
+    "ios": {
+      "bundleIdentifier": "com.kidmonitor.parent",
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "src/assets/images/adaptive-icon.png",
+        "backgroundColor": "#F6F0E8"
+      },
+      "package": "com.kidmonitor.parent"
+    },
+    "web": {
+      "favicon": "src/assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#17212B",
+          "image": "src/assets/images/splash-icon.png"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#0F766E"
+        }
+      ]
+    ]
+  }
+}

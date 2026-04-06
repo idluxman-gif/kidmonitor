@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
+using KidMonitor.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace KidMonitor.Api.Endpoints;
@@ -12,7 +13,30 @@ public static class DeviceEndpoints
     {
         var group = app.MapGroup("/devices").RequireAuthorization();
 
+        group.MapGet("/", ListDevices);
+        group.MapDelete("/{id:guid}", DeleteDevice);
         group.MapPost("/register", RegisterDevice);
+    }
+
+    private static async Task<IResult> ListDevices(
+        ClaimsPrincipal user,
+        DevicePairingService pairingService,
+        CancellationToken cancellationToken)
+    {
+        var parentId = GetParentId(user);
+        var devices = await pairingService.ListDevicesAsync(parentId, cancellationToken);
+        return Results.Ok(devices.Select(device => DeviceResponse.From(device, includeToken: false)));
+    }
+
+    private static async Task<IResult> DeleteDevice(
+        Guid id,
+        ClaimsPrincipal user,
+        DevicePairingService pairingService,
+        CancellationToken cancellationToken)
+    {
+        var parentId = GetParentId(user);
+        var deleted = await pairingService.DeleteDeviceAsync(parentId, id, cancellationToken);
+        return deleted ? Results.NoContent() : Results.NotFound();
     }
 
     // POST /devices/register
@@ -25,8 +49,7 @@ public static class DeviceEndpoints
         if (string.IsNullOrWhiteSpace(req.DeviceKey))
             return Results.BadRequest(new { error = "deviceKey is required." });
 
-        var parentId = Guid.Parse(
-            user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)!);
+        var parentId = GetParentId(user);
 
         var existing = await db.Devices.FirstOrDefaultAsync(d => d.DeviceKey == req.DeviceKey);
 
@@ -54,6 +77,9 @@ public static class DeviceEndpoints
 
         return Results.Created($"/devices/{device.Id}", DeviceResponse.From(device, includeToken: true));
     }
+
+    private static Guid GetParentId(ClaimsPrincipal user) =>
+        Guid.Parse(user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)!);
 }
 
 public record RegisterDeviceRequest(string DeviceKey, string? DeviceName);

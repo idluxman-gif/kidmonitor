@@ -47,6 +47,8 @@ builder.Services.AddMemoryCache();
 
 // ── Push notifications ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+builder.Services.AddScoped<DevicePairingService>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 // Named HttpClients for APNs (production and sandbox endpoints differ).
 builder.Services.AddHttpClient("apns-production", c =>
@@ -74,6 +76,7 @@ app.UseAuthorization();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapDeviceEndpoints();
+app.MapPairingEndpoints();
 app.MapPushTokenEndpoints();
 app.MapEventEndpoints();
 

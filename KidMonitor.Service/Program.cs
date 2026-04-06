@@ -76,6 +76,7 @@ builder.Services.AddSingleton<MonitoringEventChannel>();
 builder.Services.AddSingleton<ICloudDeviceCredentialStore, DpapiCloudDeviceCredentialStore>();
 builder.Services.AddSingleton<OfflineCloudEventStore>();
 builder.Services.AddSingleton<ICloudEventPublisher, CloudEventPublisher>();
+builder.Services.AddSingleton<CloudPairingClient>();
 builder.Services.AddHttpClient(CloudEventPublisher.HttpClientName, (serviceProvider, client) =>
     {
         var options = serviceProvider.GetRequiredService<IOptions<CloudApiOptions>>().Value;
