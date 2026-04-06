@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using KidMonitor.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace KidMonitor.Api.Endpoints;
 
@@ -15,7 +16,7 @@ public static class PairingEndpoints
     }
 
     private static async Task<IResult> GeneratePairing(
-        GeneratePairingRequest request,
+        [FromBody] GeneratePairingRequest request,
         DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
@@ -37,7 +38,7 @@ public static class PairingEndpoints
     }
 
     private static async Task<IResult> ClaimPairing(
-        ClaimPairingRequest request,
+        [FromBody] ClaimPairingRequest request,
         ClaimsPrincipal user,
         DevicePairingService pairingService,
         CancellationToken cancellationToken)
@@ -59,7 +60,7 @@ public static class PairingEndpoints
     }
 
     private static async Task<IResult> ConfirmPairing(
-        ConfirmPairingRequest request,
+        [FromBody] ConfirmPairingRequest request,
         DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
