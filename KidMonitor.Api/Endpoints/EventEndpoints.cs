@@ -1,6 +1,7 @@
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
 using KidMonitor.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -19,7 +20,7 @@ public static class EventEndpoints
     // Header: Authorization: Bearer <device-token>
     // Body: { "eventType": "...", "timestamp": "...", "metadata": { ... } }
     private static async Task<IResult> IngestEvent(
-        IngestEventRequest req,
+        [FromBody] IngestEventRequest req,
         HttpContext http,
         AppDbContext db,
         IPushNotificationService push,

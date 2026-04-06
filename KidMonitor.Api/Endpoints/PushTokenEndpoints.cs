@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KidMonitor.Api.Endpoints;
@@ -18,7 +19,7 @@ public static class PushTokenEndpoints
     // POST /push-tokens
     // Body: { "platform": "fcm|apns", "token": "..." }
     private static async Task<IResult> RegisterToken(
-        RegisterPushTokenRequest req,
+        [FromBody] RegisterPushTokenRequest req,
         ClaimsPrincipal user,
         AppDbContext db)
     {

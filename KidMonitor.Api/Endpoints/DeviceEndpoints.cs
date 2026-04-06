@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
 using KidMonitor.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KidMonitor.Api.Endpoints;
@@ -42,7 +43,7 @@ public static class DeviceEndpoints
     // POST /devices/register
     // Body: { "deviceKey": "...", "deviceName": "..." }
     private static async Task<IResult> RegisterDevice(
-        RegisterDeviceRequest req,
+        [FromBody] RegisterDeviceRequest req,
         ClaimsPrincipal user,
         AppDbContext db)
     {

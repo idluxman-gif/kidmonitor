@@ -2,6 +2,7 @@ using System.Security.Claims;
 using KidMonitor.Api.Data;
 using KidMonitor.Api.Models;
 using KidMonitor.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace KidMonitor.Api.Endpoints;
@@ -20,7 +21,7 @@ public static class AuthEndpoints
 
     // POST /auth/register
     private static async Task<IResult> Register(
-        RegisterRequest req,
+        [FromBody] RegisterRequest req,
         AppDbContext db,
         TokenService tokens)
     {
@@ -54,7 +55,7 @@ public static class AuthEndpoints
 
     // POST /auth/login
     private static async Task<IResult> Login(
-        LoginRequest req,
+        [FromBody] LoginRequest req,
         AppDbContext db,
         TokenService tokens)
     {
@@ -79,7 +80,7 @@ public static class AuthEndpoints
 
     // POST /auth/refresh
     private static async Task<IResult> Refresh(
-        RefreshRequest req,
+        [FromBody] RefreshRequest req,
         AppDbContext db,
         TokenService tokens)
     {
