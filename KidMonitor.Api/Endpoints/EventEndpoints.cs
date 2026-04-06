@@ -22,10 +22,10 @@ public static class EventEndpoints
     private static async Task<IResult> IngestEvent(
         [FromBody] IngestEventRequest req,
         HttpContext http,
-        AppDbContext db,
-        IPushNotificationService push,
-        IMemoryCache cache,
-        ILoggerFactory loggerFactory)
+        [FromServices] AppDbContext db,
+        [FromServices] IPushNotificationService push,
+        [FromServices] IMemoryCache cache,
+        [FromServices] ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("KidMonitor.Api.Events");
 

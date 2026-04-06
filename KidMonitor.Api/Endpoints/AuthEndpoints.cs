@@ -22,8 +22,8 @@ public static class AuthEndpoints
     // POST /auth/register
     private static async Task<IResult> Register(
         [FromBody] RegisterRequest req,
-        AppDbContext db,
-        TokenService tokens)
+        [FromServices] AppDbContext db,
+        [FromServices] TokenService tokens)
     {
         if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
             return Results.BadRequest(new { error = "Email and password are required." });
@@ -56,8 +56,8 @@ public static class AuthEndpoints
     // POST /auth/login
     private static async Task<IResult> Login(
         [FromBody] LoginRequest req,
-        AppDbContext db,
-        TokenService tokens)
+        [FromServices] AppDbContext db,
+        [FromServices] TokenService tokens)
     {
         var parent = await db.Parents.FirstOrDefaultAsync(
             p => p.Email == req.Email.ToLowerInvariant().Trim());
@@ -81,8 +81,8 @@ public static class AuthEndpoints
     // POST /auth/refresh
     private static async Task<IResult> Refresh(
         [FromBody] RefreshRequest req,
-        AppDbContext db,
-        TokenService tokens)
+        [FromServices] AppDbContext db,
+        [FromServices] TokenService tokens)
     {
         var parent = await db.Parents.FirstOrDefaultAsync(
             p => p.RefreshToken == req.RefreshToken);
@@ -106,7 +106,7 @@ public static class AuthEndpoints
     // POST /auth/logout
     private static async Task<IResult> Logout(
         ClaimsPrincipal user,
-        AppDbContext db)
+        [FromServices] AppDbContext db)
     {
         var parentId = Guid.Parse(user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)!);
         var parent = await db.Parents.FindAsync(parentId);

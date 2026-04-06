@@ -17,7 +17,7 @@ public static class PairingEndpoints
 
     private static async Task<IResult> GeneratePairing(
         [FromBody] GeneratePairingRequest request,
-        DevicePairingService pairingService,
+        [FromServices] DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
         try
@@ -40,7 +40,7 @@ public static class PairingEndpoints
     private static async Task<IResult> ClaimPairing(
         [FromBody] ClaimPairingRequest request,
         ClaimsPrincipal user,
-        DevicePairingService pairingService,
+        [FromServices] DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
         try
@@ -61,7 +61,7 @@ public static class PairingEndpoints
 
     private static async Task<IResult> ConfirmPairing(
         [FromBody] ConfirmPairingRequest request,
-        DevicePairingService pairingService,
+        [FromServices] DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
         try

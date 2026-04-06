@@ -21,7 +21,7 @@ public static class DeviceEndpoints
 
     private static async Task<IResult> ListDevices(
         ClaimsPrincipal user,
-        DevicePairingService pairingService,
+        [FromServices] DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
         var parentId = GetParentId(user);
@@ -32,7 +32,7 @@ public static class DeviceEndpoints
     private static async Task<IResult> DeleteDevice(
         Guid id,
         ClaimsPrincipal user,
-        DevicePairingService pairingService,
+        [FromServices] DevicePairingService pairingService,
         CancellationToken cancellationToken)
     {
         var parentId = GetParentId(user);
@@ -45,7 +45,7 @@ public static class DeviceEndpoints
     private static async Task<IResult> RegisterDevice(
         [FromBody] RegisterDeviceRequest req,
         ClaimsPrincipal user,
-        AppDbContext db)
+        [FromServices] AppDbContext db)
     {
         if (string.IsNullOrWhiteSpace(req.DeviceKey))
             return Results.BadRequest(new { error = "deviceKey is required." });

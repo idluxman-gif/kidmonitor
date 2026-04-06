@@ -21,7 +21,7 @@ public static class PushTokenEndpoints
     private static async Task<IResult> RegisterToken(
         [FromBody] RegisterPushTokenRequest req,
         ClaimsPrincipal user,
-        AppDbContext db)
+        [FromServices] AppDbContext db)
     {
         if (req.Platform is not "fcm" and not "apns")
             return Results.BadRequest(new { error = "platform must be 'fcm' or 'apns'." });
@@ -61,7 +61,7 @@ public static class PushTokenEndpoints
     private static async Task<IResult> RemoveToken(
         RemovePushTokenRequest req,
         ClaimsPrincipal user,
-        AppDbContext db)
+        [FromServices] AppDbContext db)
     {
         var parentId = Guid.Parse(
             user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)!);
