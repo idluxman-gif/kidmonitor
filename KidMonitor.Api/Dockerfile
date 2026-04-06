@@ -3,14 +3,14 @@ WORKDIR /app
 EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG CACHE_BUST=1
 WORKDIR /src
 COPY ["Directory.Build.props", "./"]
 COPY ["KidMonitor.Api/KidMonitor.Api.csproj", "KidMonitor.Api/"]
 RUN dotnet restore "KidMonitor.Api/KidMonitor.Api.csproj"
-# Cache bust: force rebuild on code changes
 COPY KidMonitor.Api/ KidMonitor.Api/
 WORKDIR "/src/KidMonitor.Api"
-RUN dotnet build "KidMonitor.Api.csproj" -c Release -o /app/build
+RUN dotnet build "KidMonitor.Api.csproj" -c Release -o /app/build --no-incremental
 
 FROM build AS publish
 RUN dotnet publish "KidMonitor.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
