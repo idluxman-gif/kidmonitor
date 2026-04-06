@@ -7,6 +7,7 @@ WORKDIR /src
 COPY ["Directory.Build.props", "./"]
 COPY ["KidMonitor.Api/KidMonitor.Api.csproj", "KidMonitor.Api/"]
 RUN dotnet restore "KidMonitor.Api/KidMonitor.Api.csproj"
+# Cache bust: force rebuild on code changes
 COPY KidMonitor.Api/ KidMonitor.Api/
 WORKDIR "/src/KidMonitor.Api"
 RUN dotnet build "KidMonitor.Api.csproj" -c Release -o /app/build
