@@ -42,6 +42,10 @@ var jwtSecret = builder.Configuration["Jwt:Secret"]
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
+        // Keep JWT claim names as-is (e.g. "sub" stays "sub").
+        // Without this, the middleware remaps "sub" → ClaimTypes.NameIdentifier,
+        // causing FindFirstValue(JwtRegisteredClaimNames.Sub) to return null → 500.
+        opt.MapInboundClaims = false;
         opt.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
