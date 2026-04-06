@@ -81,9 +81,13 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for a complete reference of e
 
 ### Staging URL
 
-> `https://kidmonitor-api-staging.up.railway.app`
+> `https://kidmonitor-api-staging.onrender.com`
 >
-> Update this value in `KidMonitor.Tests/appsettings.Test.json` and the Newman collection (`docs/postman/KidMonitor.postman_collection.json`) once the real URL is known.
+> Health check: `curl https://kidmonitor-api-staging.onrender.com/health` → `{"status":"ok"}`
+>
+> Hosted on Render (Free tier, Oregon). Auto-deploys from `master` branch of [idluxman-gif/kidmonitor](https://github.com/idluxman-gif/kidmonitor).
+> Free PostgreSQL expires **2026-05-06** — upgrade to a paid plan before then to retain data.
+> Note: free-tier instances spin down after inactivity; first request after idle may take ~50 seconds.
 
 ### Deploy to Render (alternative)
 

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "kidmonitor-cloud-api-v1",
     "name": "KidMonitor Cloud API",
-    "description": "End-to-end tests for the KidMonitor cloud relay API (Milestone 5). Covers auth, device registration, event ingestion, push token registration, and rate limiting.\n\nRun with Newman:\n  npx newman run kidmonitor-cloud-api.postman_collection.json \\\n    --env-var BASE_URL=https://staging.kidmonitor.example.com \\\n    --reporters cli,junit --reporter-junit-export results.xml",
+    "description": "End-to-end tests for the KidMonitor cloud relay API (Milestone 5). Covers auth, device registration, event ingestion, push token registration, and rate limiting.\n\nRun with Newman:\n  npx newman run kidmonitor-cloud-api.postman_collection.json \\\n    --env-var BASE_URL=https://kidmonitor-api-staging.onrender.com \\\n    --reporters cli,junit --reporter-junit-export results.xml",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

@@ -38,7 +38,7 @@ const asyncNoop = async () => undefined;
 const noop = () => undefined;
 
 export function RootNavigator({
-  apiBaseUrl = 'https://staging.kidmonitor.example.com',
+  apiBaseUrl = 'https://kidmonitor-api-staging.onrender.com',
   error = null,
   familyActivityGateway,
   notificationPreferencesStore,

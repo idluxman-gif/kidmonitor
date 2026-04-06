@@ -1,4 +1,4 @@
-export const fallbackApiBaseUrl = 'https://staging.kidmonitor.example.com';
+export const fallbackApiBaseUrl = 'https://kidmonitor-api-staging.onrender.com';
 
 export function resolveApiBaseUrl(): string {
   const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
