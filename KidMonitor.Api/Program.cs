@@ -11,9 +11,22 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ──────────────────────────────────────────────────────────────────
-var connectionString = builder.Configuration.GetConnectionString("Postgres")
+var databaseUrl = builder.Configuration.GetConnectionString("Postgres")
     ?? builder.Configuration["DATABASE_URL"]
     ?? throw new InvalidOperationException("Postgres connection string is not configured.");
+
+// Convert postgresql:// URI to ADO.NET connection string if needed (Render/Heroku style)
+string connectionString;
+if (databaseUrl.StartsWith("postgresql://") || databaseUrl.StartsWith("postgres://"))
+{
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':');
+    connectionString = $"Host={uri.Host};Port={(uri.Port > 0 ? uri.Port : 5432)};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Prefer;Trust Server Certificate=true";
+}
+else
+{
+    connectionString = databaseUrl;
+}
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(connectionString));
