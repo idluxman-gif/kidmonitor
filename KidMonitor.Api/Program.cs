@@ -11,9 +11,11 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ──────────────────────────────────────────────────────────────────
-var databaseUrl = builder.Configuration.GetConnectionString("Postgres")
-    ?? builder.Configuration["DATABASE_URL"]
-    ?? throw new InvalidOperationException("Postgres connection string is not configured.");
+var databaseUrl = builder.Configuration.GetConnectionString("Postgres");
+if (string.IsNullOrWhiteSpace(databaseUrl))
+    databaseUrl = builder.Configuration["DATABASE_URL"];
+if (string.IsNullOrWhiteSpace(databaseUrl))
+    throw new InvalidOperationException("Postgres connection string is not configured.");
 
 // Convert postgresql:// URI to ADO.NET connection string if needed (Render/Heroku style)
 string connectionString;
