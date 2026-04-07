@@ -3,7 +3,7 @@ WORKDIR /app
 EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-ARG CACHE_BUST=1
+ARG CACHE_BUST=2
 WORKDIR /src
 COPY ["Directory.Build.props", "./"]
 COPY ["KidMonitor.Api/KidMonitor.Api.csproj", "KidMonitor.Api/"]
